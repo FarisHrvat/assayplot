@@ -513,3 +513,23 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 }
 .panel-controls button:hover:not(:disabled) { color: var(--accent); }
 .panel-controls button:last-child:hover { color: var(--flag); }
+
+/* ------------------------------------------------------------ accessibility */
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px;
+  margin: -1px; padding: 0; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+
+.skip-link {
+  position: absolute; left: 0.5rem; top: -3rem; z-index: 100;
+  background: var(--surface); color: var(--accent-ink);
+  border: 1px solid var(--accent); border-radius: var(--radius);
+  padding: 0.45rem 0.8rem; text-decoration: none;
+  transition: top 0.12s;
+}
+.skip-link:focus { top: 0.5rem; }
+
+/* The focused cell needs a ring that survives the sticky header overlap. */
+.grid td.focused { box-shadow: inset 0 0 0 2px var(--accent); position: relative; z-index: 1; }
+.stage:focus { outline: none; }

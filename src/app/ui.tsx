@@ -147,6 +147,7 @@ export function App() {
 
   return (
     <div className="app">
+      <a className="skip-link" href="#stage">Skip to the current view</a>
       {recovery && (
         <div className="recovery" role="alert">
           <span>
@@ -167,7 +168,7 @@ export function App() {
       <Toolbar canUndo={canUndo} canRedo={canRedo} />
       <div className="body">
         <Navigator />
-        <main className="stage">
+        <main className="stage" id="stage" tabIndex={-1}>
           {selection.kind === 'table' && <TableView key={selection.id} id={selection.id} />}
           {selection.kind === 'analysis' && <AnalysisView key={selection.id} id={selection.id} />}
           {selection.kind === 'figure' && <FigureView key={selection.id} id={selection.id} />}
@@ -444,6 +445,96 @@ function TableView({ id }: { id: string }) {
   const analyses = project.analyses.filter((analysis) => analysis.tableId === table.id).length;
   const figures = project.figures.filter((figure) => figure.tableId === table.id).length;
 
+  /**
+   * Focuses a cell, scrolling it into view when it is outside the rendered
+   * window and waiting for React to commit when the row does not exist yet
+   * (pressing Enter on the last row adds one).
+   *
+   * Retries on a timer rather than requestAnimationFrame, which is throttled
+   * in a background tab.
+   */
+  const focusCell = (row: number, column: number, attempt = 0) => {
+    const clampedColumn = Math.max(0, Math.min(table.columns.length - 1, column));
+    const clampedRow = Math.max(0, row);
+    const select = () => {
+      const node = scrollRef.current?.querySelector<HTMLInputElement>(
+        `input[data-cell="${clampedRow}:${clampedColumn}"]`
+      );
+      if (!node) return false;
+      node.focus();
+      node.select();
+      return true;
+    };
+    if (select()) return;
+
+    if (scrollRef.current && clampedRow * ROW_HEIGHT > scrollRef.current.clientHeight) {
+      scrollRef.current.scrollTop = Math.max(0, clampedRow * ROW_HEIGHT - scrollRef.current.clientHeight / 2);
+      setScrollTop(scrollRef.current.scrollTop);
+    }
+    if (attempt < 5) setTimeout(() => focusCell(clampedRow, clampedColumn, attempt + 1), 16);
+  };
+
+  /**
+   * Arrow keys, Enter and Tab move between cells the way a spreadsheet does.
+   * Left and right only leave the cell when the caret is already at its edge,
+   * so editing a number still works normally.
+   */
+  const moveWithKeyboard = (event: React.KeyboardEvent<HTMLInputElement>, row: number, column: number) => {
+    const input = event.currentTarget;
+    // Landing on a cell selects its contents, the way a spreadsheet does. In
+    // that state the arrow keys navigate; once the caret is placed inside the
+    // text they move the caret instead, and only leave the cell at its edges.
+    const wholeValueSelected =
+      input.value.length > 0 &&
+      input.selectionStart === 0 &&
+      input.selectionEnd === input.value.length;
+    const atStart = wholeValueSelected || (input.selectionStart === 0 && input.selectionEnd === 0);
+    const atEnd = wholeValueSelected ||
+      (input.selectionStart === input.value.length && input.selectionEnd === input.value.length);
+
+    switch (event.key) {
+      case 'ArrowUp':
+        event.preventDefault();
+        focusCell(row - 1, column);
+        break;
+      case 'ArrowDown':
+        event.preventDefault();
+        focusCell(row + 1, column);
+        break;
+      case 'ArrowLeft':
+        if (!atStart) return;
+        event.preventDefault();
+        focusCell(row, column - 1);
+        break;
+      case 'ArrowRight':
+        if (!atEnd) return;
+        event.preventDefault();
+        focusCell(row, column + 1);
+        break;
+      case 'Enter': {
+        event.preventDefault();
+        const isLastRow = row === table.rows.length - 1;
+        if (isLastRow) addRow(table.id);
+        // The new row may not be in the DOM yet; focusCell retries until it is.
+        focusCell(row + 1, column);
+        break;
+      }
+      case 'Tab': {
+        const lastColumn = table.columns.length - 1;
+        if (event.shiftKey && column === 0 && row > 0) {
+          event.preventDefault();
+          focusCell(row - 1, lastColumn);
+        } else if (!event.shiftKey && column === lastColumn && row < table.rows.length - 1) {
+          event.preventDefault();
+          focusCell(row + 1, 0);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  };
+
   const onPaste = (event: React.ClipboardEvent, row: number, column: number) => {
     const text = event.clipboardData.getData('text/plain');
     if (!text || (!text.includes('\t') && !text.includes('\n'))) return;
@@ -494,6 +585,10 @@ function TableView({ id }: { id: string }) {
           if (virtualise) setScrollTop((event.target as HTMLDivElement).scrollTop);
         }}>
         <table className="grid">
+          <caption className="visually-hidden">
+            {table.name}: {table.rows.length} rows by {table.columns.length} columns.
+            Use the arrow keys to move between cells.
+          </caption>
           <thead>
             <tr>
               <th className="corner" />
@@ -530,6 +625,7 @@ function TableView({ id }: { id: string }) {
                   return (
                     <td key={column.id} className={active ? 'focused' : ''}>
                       <input
+                        data-cell={`${rowIndex}:${columnIndex}`}
                         value={value === null || value === undefined ? '' : String(value)}
                         onFocus={() => setFocus({ row: rowIndex, column: columnIndex })}
                         onBlur={() => setFocus(null)}
@@ -541,9 +637,7 @@ function TableView({ id }: { id: string }) {
                             : Number.isFinite(Number(trimmed)) ? Number(trimmed) : text;
                           setCell(table.id, rowIndex, columnIndex, next);
                         }}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' && rowIndex === table.rows.length - 1) addRow(table.id);
-                        }}
+                        onKeyDown={(event) => moveWithKeyboard(event, rowIndex, columnIndex)}
                         aria-label={`Row ${rowIndex + 1}, ${column.name}`}
                         inputMode="decimal"
                       />
