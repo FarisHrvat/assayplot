@@ -6,6 +6,7 @@
 // one.
 
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
+import * as XLSX from 'xlsx';
 import {
   type Cell,
   type DataTable,
@@ -36,9 +37,9 @@ export function serializeProject(project: Project): Uint8Array {
       },
     }),
     'README.txt': strToU8(
-      'This is a Statista project.\n\n' +
+      'This is a AssayPlot project.\n\n' +
         'It is an ordinary ZIP archive of JSON files. You can open it with any\n' +
-        'unzip tool and read your data without Statista installed. Nothing here\n' +
+        'unzip tool and read your data without AssayPlot installed. Nothing here\n' +
         'is encrypted, obfuscated, or proprietary.\n'
     ),
   };
@@ -59,7 +60,7 @@ export function deserializeProject(bytes: Uint8Array): Project {
     try {
       return migrate(JSON.parse(strFromU8(bytes)));
     } catch {
-      throw new Error('This file is not a Statista project.');
+      throw new Error('This file is not a AssayPlot project.');
     }
   }
 
@@ -91,7 +92,7 @@ export function migrate(raw: any): Project {
   const version = Number(raw?.schemaVersion ?? 0);
 
   // v0-v2: the prototype's single flat table in long format.
-  if (version < 3) {
+  if (version > 0 && version < 3) {
     const rows: any[] = Array.isArray(raw?.data) ? raw.data : [];
     const groupKey = raw?.roles?.group ?? 'group';
     const valueKey = raw?.roles?.value ?? 'value';
@@ -247,6 +248,70 @@ export function tableFromDelimited(text: string, name: string): DataTable {
   };
 }
 
+/**
+ * Reads the first worksheet of an Excel workbook into a table. Handles .xlsx,
+ * .xls, and .ods, since the parser covers all three.
+ */
+export function tableFromWorkbook(bytes: ArrayBuffer, name: string): DataTable {
+  const book = XLSX.read(bytes, { type: 'array' });
+  const sheetName = book.SheetNames[0];
+  if (!sheetName) throw new Error('That workbook has no worksheets.');
+  const sheet = book.Sheets[sheetName];
+  const grid = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, blankrows: false, raw: true });
+  if (!grid.length) throw new Error(`The worksheet "${sheetName}" is empty.`);
+
+  const width = Math.max(...grid.map((row) => row.length));
+  const firstRowIsHeader = grid[0].some(
+    (cell) => cell !== null && cell !== undefined && cell !== '' && typeof cell !== 'number'
+  );
+  const header = firstRowIsHeader ? grid[0] : [];
+  const body = firstRowIsHeader ? grid.slice(1) : grid;
+
+  const columns = Array.from({ length: width }, (_, index) => ({
+    id: newId('col'),
+    name: String(header[index] ?? `Column ${index + 1}`).trim() || `Column ${index + 1}`,
+    role: 'group' as const,
+  }));
+
+  return {
+    id: newId('tbl'),
+    name: book.SheetNames.length > 1 ? `${name} · ${sheetName}` : name,
+    shape: 'column',
+    columns,
+    rows: body.map((row) =>
+      Array.from({ length: width }, (_, index) => {
+        const cell = row[index];
+        if (cell === null || cell === undefined || cell === '') return null;
+        if (typeof cell === 'number') return cell;
+        const numeric = Number(String(cell).trim().replace(/,/g, ''));
+        return Number.isFinite(numeric) ? numeric : String(cell);
+      })
+    ),
+  };
+}
+
+/** Every extension the importer accepts, for the file dialog and error text. */
+export const IMPORT_EXTENSIONS = ['.csv', '.tsv', '.txt', '.tab', '.dat', '.xlsx', '.xls', '.xlsm', '.ods'];
+
+const WORKBOOK_EXTENSIONS = ['.xlsx', '.xls', '.xlsm', '.ods'];
+
+/** Dispatches on file extension, so one importer handles every supported format. */
+export async function tableFromFile(file: File): Promise<DataTable> {
+  const name = file.name.replace(/\.[^.]+$/, '');
+  const lower = file.name.toLowerCase();
+  const extension = lower.slice(lower.lastIndexOf('.'));
+
+  if (WORKBOOK_EXTENSIONS.some((candidate) => lower.endsWith(candidate))) {
+    return tableFromWorkbook(await file.arrayBuffer(), name);
+  }
+  if (IMPORT_EXTENSIONS.includes(extension) || extension === '') {
+    return tableFromDelimited(await file.text(), name);
+  }
+  throw new Error(
+    `AssayPlot cannot read "${extension}" files. Supported: ${IMPORT_EXTENSIONS.join(', ')}.`
+  );
+}
+
 export function tableToCsv(table: DataTable): string {
   const escape = (value: Cell) => {
     if (value === null || value === undefined) return '';
@@ -279,6 +344,9 @@ export function download(filename: string, data: BlobPart, mime: string): void {
 /** Serialises a live SVG node, inlining the font so the file stands alone. */
 export function svgSource(node: SVGSVGElement): string {
   const clone = node.cloneNode(true) as SVGSVGElement;
+  // An in-place edit renders an HTML <input> inside a foreignObject. Exporting
+  // mid-edit must not embed a form control in the figure.
+  clone.querySelectorAll('foreignObject').forEach((node) => node.remove());
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   clone.setAttribute('font-family', 'Helvetica, Arial, sans-serif');
   const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect');

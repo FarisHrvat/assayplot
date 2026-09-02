@@ -1,15 +1,15 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  type Analysis,
   type Cell,
+  type Correction,
   type DataTable,
-  type Figure,
   type Method,
   type PlotType,
   APP_VERSION,
-  analysisColumns,
+  METHOD_FAMILIES,
   availableMethods,
   columnValues,
+  emptyProject,
   formatP,
   methodInfo,
   methodsSentence,
@@ -17,15 +17,16 @@ import {
   valueColumns,
 } from './model.ts';
 import { analysisById, resultFor, tableById, useStore, type Selection } from './store.ts';
-import { Plot, PALETTES } from './plot.tsx';
+import { Plot, PALETTES, PLOT_GROUPS, paletteFor, plotsForShape, type Selected } from './plot.tsx';
 import {
+  IMPORT_EXTENSIONS,
   deserializeProject,
   download,
   parseClipboard,
   serializeProject,
   svgSource,
   svgToPng,
-  tableFromDelimited,
+  tableFromFile,
   tableToCsv,
 } from './io.ts';
 
@@ -34,7 +35,6 @@ import {
 // ===========================================================================
 
 export function App() {
-  const project = useStore((s) => s.project);
   const selection = useStore((s) => s.selection);
   const toast = useStore((s) => s.toast);
   const notify = useStore((s) => s.notify);
@@ -45,14 +45,18 @@ export function App() {
 
   useEffect(() => {
     if (!toast) return;
-    const timer = setTimeout(() => notify(null), 3200);
+    const timer = setTimeout(() => notify(null), 3600);
     return () => clearTimeout(timer);
   }, [toast, notify]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const meta = event.metaKey || event.ctrlKey;
-      if (!meta) return;
+      const target = event.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) {
+        // Let the browser's own undo work while typing in a field.
+        if (event.key === 'z' || event.key === 'y') return;
+      }
+      if (!(event.metaKey || event.ctrlKey)) return;
       if (event.key === 'z' && !event.shiftKey) { event.preventDefault(); undo(); }
       else if ((event.key === 'z' && event.shiftKey) || event.key === 'y') { event.preventDefault(); redo(); }
     };
@@ -69,21 +73,9 @@ export function App() {
           {selection.kind === 'table' && <TableView key={selection.id} id={selection.id} />}
           {selection.kind === 'analysis' && <AnalysisView key={selection.id} id={selection.id} />}
           {selection.kind === 'figure' && <FigureView key={selection.id} id={selection.id} />}
-          {!project.tables.length && selection.kind === 'table' && <Empty />}
         </main>
       </div>
       {toast && <div className="toast" role="status">{toast}</div>}
-    </div>
-  );
-}
-
-function Empty() {
-  const addTable = useStore((s) => s.addTable);
-  return (
-    <div className="empty-stage">
-      <h2>No data yet</h2>
-      <p>Create a table, or import a CSV from the toolbar.</p>
-      <button className="primary" onClick={() => addTable('column')}>New data table</button>
     </div>
   );
 }
@@ -110,12 +102,19 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
     // Copy into a plain ArrayBuffer so the Blob constructor accepts it.
     const bytes = new Uint8Array(serializeProject(project)).slice().buffer;
     const safe = project.name.replace(/[^\w\-. ]+/g, '_').trim() || 'project';
-    download(`${safe}.statista`, bytes, 'application/zip');
+    download(`${safe}.assayplot`, bytes, 'application/zip');
     useStore.setState({ dirty: false });
     notify('Project saved.');
   };
 
+  const newProject = () => {
+    if (dirty && !confirm('Start a new project? Unsaved changes in this one will be lost.')) return;
+    replaceProject(emptyProject());
+    notify('New project started.');
+  };
+
   const open = async (file: File) => {
+    if (dirty && !confirm('Open this project? Unsaved changes in the current one will be lost.')) return;
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       replaceProject(deserializeProject(bytes));
@@ -125,22 +124,29 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
     }
   };
 
-  const importData = async (file: File) => {
-    try {
-      const text = await file.text();
-      const table = tableFromDelimited(text, file.name.replace(/\.[^.]+$/, ''));
-      commit({ ...project, tables: [...project.tables, table] });
-      select({ kind: 'table', id: table.id });
-      notify(`Imported ${table.rows.length} rows and ${table.columns.length} columns.`);
-    } catch (error) {
-      notify(error instanceof Error ? error.message : 'That file could not be read.');
+  const importData = async (files: FileList) => {
+    const added: string[] = [];
+    let next = useStore.getState().project;
+    for (const file of Array.from(files)) {
+      try {
+        const table = await tableFromFile(file);
+        next = { ...next, tables: [...next.tables, table] };
+        added.push(`${table.name} (${table.rows.length} × ${table.columns.length})`);
+      } catch (error) {
+        notify(error instanceof Error ? error.message : `${file.name} could not be read.`);
+        return;
+      }
     }
+    commit(next);
+    const last = next.tables[next.tables.length - 1];
+    if (last) select({ kind: 'table', id: last.id });
+    notify(`Imported ${added.join(', ')}.`);
   };
 
   return (
     <header className="toolbar">
       <div className="brand">
-        <span className="mark" aria-hidden="true">∿</span>
+        <span className="mark" aria-hidden="true">◴</span>
         <input
           className="project-name"
           value={project.name}
@@ -154,33 +160,25 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
         <button onClick={undo} disabled={!canUndo} title="Undo (⌘Z)">↶</button>
         <button onClick={redo} disabled={!canRedo} title="Redo (⇧⌘Z)">↷</button>
         <span className="divider" />
-        <button onClick={() => importRef.current?.click()}>Import CSV</button>
+        <button onClick={newProject}>New</button>
+        <button onClick={() => importRef.current?.click()} title={`Accepts ${IMPORT_EXTENSIONS.join(', ')}`}>
+          Import data
+        </button>
         <button onClick={() => openRef.current?.click()}>Open</button>
         <button className="primary" onClick={save}>Save project</button>
       </div>
 
-      <input
-        ref={openRef}
-        type="file"
-        accept=".statista,.zip,.json"
-        hidden
+      <input ref={openRef} type="file" accept=".assayplot,.zip,.json" hidden
         onChange={(event) => {
           const file = event.target.files?.[0];
           if (file) open(file);
           event.target.value = '';
-        }}
-      />
-      <input
-        ref={importRef}
-        type="file"
-        accept=".csv,.tsv,.txt"
-        hidden
+        }} />
+      <input ref={importRef} type="file" multiple accept={IMPORT_EXTENSIONS.join(',')} hidden
         onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file) importData(file);
+          if (event.target.files?.length) importData(event.target.files);
           event.target.value = '';
-        }}
-      />
+        }} />
     </header>
   );
 }
@@ -197,83 +195,76 @@ function Navigator() {
   const addAnalysis = useStore((s) => s.addAnalysis);
   const addFigure = useStore((s) => s.addFigure);
   const deleteNode = useStore((s) => s.deleteNode);
+  const notify = useStore((s) => s.notify);
 
   const activeTableId =
     selection.kind === 'table'
       ? selection.id
       : selection.kind === 'analysis'
         ? analysisById(project, selection.id)?.tableId ?? project.tables[0]?.id
-        : project.figures.find((f) => f.id === selection.id)?.tableId ?? project.tables[0]?.id;
+        : project.figures.find((figure) => figure.id === selection.id)?.tableId ?? project.tables[0]?.id;
 
-  const isActive = (kind: Selection['kind'], id: string) =>
-    selection.kind === kind && selection.id === id;
+  const remove = (kind: Selection['kind'], id: string, name: string) => {
+    if (kind === 'table') {
+      const analyses = project.analyses.filter((analysis) => analysis.tableId === id).length;
+      const figures = project.figures.filter((figure) => figure.tableId === id).length;
+      const attached = analyses + figures;
+      const detail = attached
+        ? `\n\nThis also closes ${analyses} analysis${analyses === 1 ? '' : 'es'} and ${figures} figure${figures === 1 ? '' : 's'} built on it.`
+        : '';
+      if (!confirm(`Close "${name}"?${detail}`)) return;
+    } else if (!confirm(`Delete "${name}"?`)) return;
+    deleteNode(kind, id);
+    notify(`Closed ${name}.`);
+  };
 
   const Item = ({ kind, id, name, badge }: { kind: Selection['kind']; id: string; name: string; badge?: string }) => (
-    <div className={`nav-item ${isActive(kind, id) ? 'active' : ''}`}>
+    <div className={`nav-item ${selection.kind === kind && selection.id === id ? 'active' : ''}`}>
       <button className="nav-label" onClick={() => select({ kind, id })}>
         <span className="nav-name">{name}</span>
         {badge && <span className="nav-badge">{badge}</span>}
       </button>
-      <button
-        className="nav-delete"
-        title={`Delete ${name}`}
-        onClick={() => {
-          if (confirm(`Delete "${name}"? Anything built from it is removed too.`)) deleteNode(kind, id);
-        }}
-      >
-        ×
-      </button>
+      <button className="nav-delete" title={kind === 'table' ? `Close ${name}` : `Delete ${name}`}
+        aria-label={kind === 'table' ? `Close ${name}` : `Delete ${name}`}
+        onClick={() => remove(kind, id, name)}>×</button>
     </div>
   );
 
   return (
     <nav className="navigator" aria-label="Project contents">
-      <Section
-        title="Data tables"
-        action={<button onClick={() => addTable('column')} title="New data table">＋</button>}
-      >
+      <Section title="Data tables" action={<button onClick={() => addTable('column')} title="New data table">＋</button>}>
+        {!project.tables.length && <p className="nav-hint">Import a file or add a table.</p>}
         {project.tables.map((table) => (
-          <Item
-            key={table.id}
-            kind="table"
-            id={table.id}
-            name={table.name}
-            badge={table.shape === 'xy' ? 'XY' : `${valueColumns(table).length} col`}
-          />
+          <Item key={table.id} kind="table" id={table.id} name={table.name}
+            badge={table.shape === 'xy' ? 'XY' : `${valueColumns(table).length} col`} />
         ))}
       </Section>
 
-      <Section
-        title="Analyses"
-        action={<button onClick={() => activeTableId && addAnalysis(activeTableId)} title="New analysis">＋</button>}
-      >
-        {project.analyses.length === 0 && <p className="nav-hint">Analyses stay linked to their table.</p>}
+      <Section title="Analyses" action={
+        <button onClick={() => activeTableId && addAnalysis(activeTableId)} disabled={!activeTableId} title="New analysis">＋</button>
+      }>
+        {!project.analyses.length && <p className="nav-hint">Analyses stay linked to their table.</p>}
         {project.analyses.map((analysis) => {
           const table = tableById(project, analysis.tableId);
           const result = table ? resultFor(table, analysis) : null;
           return (
-            <Item
-              key={analysis.id}
-              kind="analysis"
-              id={analysis.id}
-              name={analysis.name}
-              badge={result?.error ? '!' : result?.pValue != null ? formatP(result.pValue) : undefined}
-            />
+            <Item key={analysis.id} kind="analysis" id={analysis.id} name={analysis.name}
+              badge={result?.error ? '!' : result?.pValue != null ? formatP(result.pValue) : undefined} />
           );
         })}
       </Section>
 
-      <Section
-        title="Figures"
-        action={<button onClick={() => activeTableId && addFigure(activeTableId)} title="New figure">＋</button>}
-      >
+      <Section title="Figures" action={
+        <button onClick={() => activeTableId && addFigure(activeTableId)} disabled={!activeTableId} title="New figure">＋</button>
+      }>
+        {!project.figures.length && <p className="nav-hint">Figures redraw when the data changes.</p>}
         {project.figures.map((figure) => (
           <Item key={figure.id} kind="figure" id={figure.id} name={figure.name} badge={figure.plotType} />
         ))}
       </Section>
 
       <div className="nav-foot">
-        <span>Statista {APP_VERSION}</span>
+        <span>AssayPlot {APP_VERSION}</span>
         <span className="nav-foot-note">Offline. Nothing leaves this machine.</span>
       </div>
     </nav>
@@ -311,18 +302,12 @@ function TableView({ id }: { id: string }) {
   const addAnalysis = useStore((s) => s.addAnalysis);
   const addFigure = useStore((s) => s.addFigure);
   const notify = useStore((s) => s.notify);
-
   const [focus, setFocus] = useState<{ row: number; column: number } | null>(null);
 
-  if (!table) return <Empty />;
+  if (!table) return <NothingSelected />;
 
-  const dependents = useMemo(
-    () => ({
-      analyses: project.analyses.filter((a) => a.tableId === table.id),
-      figures: project.figures.filter((f) => f.tableId === table.id),
-    }),
-    [project.analyses, project.figures, table.id]
-  );
+  const analyses = project.analyses.filter((analysis) => analysis.tableId === table.id).length;
+  const figures = project.figures.filter((figure) => figure.tableId === table.id).length;
 
   const onPaste = (event: React.ClipboardEvent, row: number, column: number) => {
     const text = event.clipboardData.getData('text/plain');
@@ -335,30 +320,20 @@ function TableView({ id }: { id: string }) {
 
   return (
     <div className="view">
-      <ViewHead
-        eyebrow={`Data table · ${table.shape === 'xy' ? 'XY' : 'Column'}`}
-        title={table.name}
-        onRename={(name) => renameNode('table', table.id, name)}
-      >
-        <select
-          value={table.shape}
-          onChange={(event) => setTableShape(table.id, event.target.value as any)}
-          aria-label="Table shape"
-        >
+      <ViewHead eyebrow={`Data table · ${table.shape === 'xy' ? 'XY' : 'Column'}`} title={table.name}
+        onRename={(name) => renameNode('table', table.id, name)}>
+        <select value={table.shape} onChange={(event) => setTableShape(table.id, event.target.value as any)} aria-label="Table shape">
           <option value="column">Column — each column is a group</option>
           <option value="xy">XY — first column is X</option>
         </select>
         <button onClick={() => addAnalysis(table.id)}>Analyse</button>
         <button onClick={() => addFigure(table.id)}>Graph</button>
-        <button onClick={() => download(`${table.name}.csv`, tableToCsv(table), 'text/csv')}>
-          Export CSV
-        </button>
+        <button onClick={() => download(`${table.name}.csv`, tableToCsv(table), 'text/csv')}>Export CSV</button>
       </ViewHead>
 
       <p className="hint">
-        Type into any cell. Paste a block straight from Excel. Every change flows through to
-        the {dependents.analyses.length} analysis{dependents.analyses.length === 1 ? '' : 'es'} and{' '}
-        {dependents.figures.length} figure{dependents.figures.length === 1 ? '' : 's'} built on this table.
+        Type into any cell, or paste a block straight from Excel. Every change flows through to
+        the {analyses} analysis{analyses === 1 ? '' : 'es'} and {figures} figure{figures === 1 ? '' : 's'} built on this table.
       </p>
 
       <div className="grid-wrap">
@@ -369,28 +344,17 @@ function TableView({ id }: { id: string }) {
               {table.columns.map((column, columnIndex) => (
                 <th key={column.id}>
                   <div className="col-head">
-                    <input
-                      value={column.name}
+                    <input value={column.name}
                       onChange={(event) => renameColumn(table.id, column.id, event.target.value)}
-                      aria-label={`Name of column ${columnIndex + 1}`}
-                    />
-                    <button
-                      className="col-delete"
-                      title="Delete column"
+                      aria-label={`Name of column ${columnIndex + 1}`} />
+                    <button className="col-delete" title={`Delete column ${column.name}`}
                       onClick={() => deleteColumn(table.id, columnIndex)}
-                      disabled={table.columns.length <= 1}
-                    >
-                      ×
-                    </button>
+                      disabled={table.columns.length <= 1}>×</button>
                   </div>
-                  {table.shape === 'xy' && (
-                    <span className="col-role">{column.role === 'x' ? 'X' : 'Y'}</span>
-                  )}
+                  {table.shape === 'xy' && <span className="col-role">{column.role === 'x' ? 'X' : 'Y'}</span>}
                 </th>
               ))}
-              <th className="add-col">
-                <button onClick={() => addColumn(table.id)} title="Add column">＋</button>
-              </th>
+              <th className="add-col"><button onClick={() => addColumn(table.id)} title="Add column">＋</button></th>
             </tr>
           </thead>
           <tbody>
@@ -398,13 +362,8 @@ function TableView({ id }: { id: string }) {
               <tr key={rowIndex}>
                 <th className="row-head">
                   <span>{rowIndex + 1}</span>
-                  <button
-                    title="Delete row"
-                    onClick={() => deleteRow(table.id, rowIndex)}
-                    disabled={table.rows.length <= 1}
-                  >
-                    ×
-                  </button>
+                  <button title={`Delete row ${rowIndex + 1}`} onClick={() => deleteRow(table.id, rowIndex)}
+                    disabled={table.rows.length <= 1}>×</button>
                 </th>
                 {table.columns.map((column, columnIndex) => {
                   const value = row[columnIndex];
@@ -419,8 +378,8 @@ function TableView({ id }: { id: string }) {
                         onChange={(event) => {
                           const text = event.target.value;
                           const trimmed = text.trim();
-                          const next: Cell =
-                            trimmed === '' ? null : Number.isFinite(Number(trimmed)) ? Number(trimmed) : text;
+                          const next: Cell = trimmed === '' ? null
+                            : Number.isFinite(Number(trimmed)) ? Number(trimmed) : text;
                           setCell(table.id, rowIndex, columnIndex, next);
                         }}
                         onKeyDown={(event) => {
@@ -469,16 +428,12 @@ function ColumnSummary({ table }: { table: DataTable }) {
             );
           }
           const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-          const sd = Math.sqrt(
-            values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / Math.max(1, values.length - 1)
-          );
+          const sd = Math.sqrt(values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / Math.max(1, values.length - 1));
           return (
             <div key={column.id} className="summary-card">
               <span className="summary-name">{column.name}</span>
               <strong>{mean.toFixed(2)}</strong>
-              <span className="summary-note">
-                ± {Number.isFinite(sd) ? sd.toFixed(2) : '—'} SD · n = {values.length}
-              </span>
+              <span className="summary-note">± {Number.isFinite(sd) ? sd.toFixed(2) : '—'} SD · n = {values.length}</span>
             </div>
           );
         })}
@@ -500,7 +455,7 @@ function AnalysisView({ id }: { id: string }) {
   const select = useStore((s) => s.select);
   const [showRaw, setShowRaw] = useState(false);
 
-  if (!analysis) return <Empty />;
+  if (!analysis) return <NothingSelected />;
   const table = tableById(project, analysis.tableId);
   if (!table) return <div className="view"><p>This analysis has lost its data table.</p></div>;
 
@@ -509,25 +464,36 @@ function AnalysisView({ id }: { id: string }) {
   const info = methodInfo(analysis.method);
   const candidates = valueColumns(table);
   const chosen = analysis.options.columnIds ?? candidates.map((column) => column.id);
-  const needsPair = ['welch', 'student', 'paired', 'mannwhitney', 'wilcoxon'].includes(analysis.method);
-  const isGroupTest = !['correlation', 'spearman', 'regression', 'descriptive'].includes(analysis.method);
   const sentence = methodsSentence(table, analysis, result);
+
+  const setOption = (patch: Partial<typeof analysis.options>) =>
+    updateAnalysis(analysis.id, { options: { ...analysis.options, ...patch } });
 
   const toggleColumn = (columnId: string) => {
     const current = new Set(chosen);
     if (current.has(columnId)) current.delete(columnId);
     else current.add(columnId);
-    const ordered = candidates.filter((column) => current.has(column.id)).map((column) => column.id);
-    updateAnalysis(analysis.id, { options: { ...analysis.options, columnIds: ordered } });
+    setOption({ columnIds: candidates.filter((column) => current.has(column.id)).map((column) => column.id) });
   };
+
+  const isGroupComparison = ['anova', 'kruskal', 'friedman'].includes(analysis.method);
+  const showColumnPicker = candidates.length > 1 &&
+    !['normality', 'outlier', 'descriptive'].includes(analysis.method);
+
+  const corrections: { id: Correction; label: string; only?: Method[] }[] = ([
+    { id: 'tukey', label: 'Tukey HSD (all pairs, exact family-wise)', only: ['anova'] },
+    { id: 'dunn', label: "Dunn's test with Holm (rank-based)", only: ['kruskal'] },
+    { id: 'control', label: 'Each group vs a control (Šídák)', only: ['anova', 'kruskal'] },
+    { id: 'holm', label: 'Pairwise tests, Holm correction' },
+    { id: 'bh', label: 'Pairwise tests, Benjamini–Hochberg (FDR)' },
+    { id: 'none', label: 'Pairwise tests, no correction' },
+  ] as { id: Correction; label: string; only?: Method[] }[])
+    .filter((entry) => !entry.only || entry.only.includes(analysis.method));
 
   return (
     <div className="view">
-      <ViewHead
-        eyebrow={`Analysis · from ${table.name}`}
-        title={analysis.name}
-        onRename={(name) => renameNode('analysis', analysis.id, name)}
-      >
+      <ViewHead eyebrow={`Analysis · from ${table.name}`} title={analysis.name}
+        onRename={(name) => renameNode('analysis', analysis.id, name)}>
         <button onClick={() => select({ kind: 'table', id: table.id })}>Open data</button>
       </ViewHead>
 
@@ -535,59 +501,110 @@ function AnalysisView({ id }: { id: string }) {
         <section className="panel">
           <h3>Method</h3>
           <div className="method-list">
-            {options.map(({ info: candidate, usable, why }) => (
-              <label key={candidate.id} className={`method ${usable ? '' : 'disabled'} ${analysis.method === candidate.id ? 'chosen' : ''}`}>
-                <input
-                  type="radio"
-                  name={`method-${analysis.id}`}
-                  checked={analysis.method === candidate.id}
-                  disabled={!usable}
-                  onChange={() => updateAnalysis(analysis.id, { method: candidate.id as Method })}
-                />
-                <span>
-                  <strong>{candidate.label}</strong>
-                  <em>{why}</em>
-                </span>
-              </label>
-            ))}
+            {METHOD_FAMILIES.map((family) => {
+              const inFamily = options.filter((entry) => entry.info.family === family);
+              if (!inFamily.length) return null;
+              return (
+                <div key={family} className="method-family">
+                  <h4>{family}</h4>
+                  {inFamily.map(({ info: candidate, usable, why }) => (
+                    <label key={candidate.id}
+                      className={`method ${usable ? '' : 'disabled'} ${analysis.method === candidate.id ? 'chosen' : ''}`}>
+                      <input type="radio" name={`method-${analysis.id}`}
+                        checked={analysis.method === candidate.id} disabled={!usable}
+                        onChange={() => updateAnalysis(analysis.id, { method: candidate.id as Method })} />
+                      <span>
+                        <strong>{candidate.label}</strong>
+                        <em>{why}</em>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         </section>
 
-        <section className="panel">
-          <h3>Result</h3>
-          {result.error ? (
-            <div className="error-box">
-              <strong>Cannot run this yet</strong>
-              <p>{result.error}</p>
-            </div>
-          ) : (
-            <>
-              <div className="metrics">
-                {result.summary.map((entry) => (
-                  <div key={entry.label} className="metric">
-                    <span className="metric-label">{entry.label}</span>
-                    <strong>{entry.value}</strong>
-                    {entry.note && <small>{entry.note}</small>}
+        <div>
+          <section className="panel">
+            <h3>Result</h3>
+            {result.error ? (
+              <div className="error-box">
+                <strong>Cannot run this yet</strong>
+                <p>{result.error}</p>
+              </div>
+            ) : (
+              <>
+                {result.summary.length > 0 && (
+                  <div className="metrics">
+                    {result.summary.map((entry) => (
+                      <div key={entry.label} className="metric">
+                        <span className="metric-label">{entry.label}</span>
+                        <strong>{entry.value}</strong>
+                        {entry.note && <small>{entry.note}</small>}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )}
+                {result.warnings.map((warning) => <p key={warning} className="warn">{warning}</p>)}
+                <div className="assumption">
+                  <strong>What this assumes</strong>
+                  <p>{info.assumes}</p>
+                </div>
+              </>
+            )}
+          </section>
 
-              {result.warnings.map((warning) => (
-                <p key={warning} className="warn">{warning}</p>
-              ))}
-
-              <div className="assumption">
-                <strong>What this assumes</strong>
-                <p>{info.assumes}</p>
-              </div>
-            </>
+          {(analysis.method === 'onesample' || analysis.method === 'doseresponse' || isGroupComparison) && (
+            <section className="panel">
+              <h3>Options</h3>
+              {analysis.method === 'onesample' && (
+                <Field label="Compare the mean against">
+                  <input type="number" value={analysis.options.hypothesised ?? 0}
+                    onChange={(event) => setOption({ hypothesised: Number(event.target.value) || 0 })} />
+                </Field>
+              )}
+              {analysis.method === 'doseresponse' && (
+                <label className="check">
+                  <input type="checkbox" checked={analysis.options.logX ?? false}
+                    onChange={(event) => setOption({ logX: event.target.checked })} />
+                  X is already on a log scale
+                </label>
+              )}
+              {isGroupComparison && analysis.method !== 'friedman' && (
+                <>
+                  <Field label="Post-hoc comparisons">
+                    <select value={analysis.options.correction ?? (analysis.method === 'anova' ? 'tukey' : 'dunn')}
+                      onChange={(event) => setOption({ correction: event.target.value as Correction })}>
+                      {corrections.map((entry) => (
+                        <option key={entry.id} value={entry.id}>{entry.label}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  {analysis.options.correction === 'control' && (
+                    <Field label="Control column">
+                      <select value={analysis.options.controlIndex ?? 0}
+                        onChange={(event) => setOption({ controlIndex: Number(event.target.value) })}>
+                        {candidates
+                          .filter((column) => chosen.includes(column.id))
+                          .map((column, index) => <option key={column.id} value={index}>{column.name}</option>)}
+                      </select>
+                    </Field>
+                  )}
+                </>
+              )}
+            </section>
           )}
-        </section>
+        </div>
       </div>
 
-      {isGroupTest && candidates.length > 2 && (
+      {showColumnPicker && (
         <section className="panel">
-          <h3>Columns to compare {needsPair && <span className="tag">pick exactly two</span>}</h3>
+          <h3>
+            Columns used
+            {methodInfo(analysis.method).maxGroups === 2 && <span className="tag">pick exactly two</span>}
+            {methodInfo(analysis.method).maxGroups === 1 && <span className="tag">pick one</span>}
+          </h3>
           <div className="chips">
             {candidates.map((column) => (
               <label key={column.id} className={`chip ${chosen.includes(column.id) ? 'on' : ''}`}>
@@ -601,34 +618,34 @@ function AnalysisView({ id }: { id: string }) {
 
       {result.comparisons.length > 1 && (
         <section className="panel">
-          <div className="panel-head">
-            <h3>Pairwise comparisons</h3>
-            <label className="inline-field">
-              Correction
-              <select
-                value={analysis.options.correction ?? 'holm'}
-                onChange={(event) =>
-                  updateAnalysis(analysis.id, { options: { ...analysis.options, correction: event.target.value as any } })
-                }
-              >
-                <option value="holm">Holm</option>
-                <option value="bh">Benjamini–Hochberg (FDR)</option>
-                <option value="none">None</option>
-              </select>
-            </label>
-          </div>
+          <h3>Pairwise comparisons</h3>
           <div className="table-scroll">
             <table className="results">
               <thead>
-                <tr><th>Comparison</th><th>P (raw)</th><th>P (adjusted)</th><th></th></tr>
+                <tr>
+                  <th>Comparison</th>
+                  {result.comparisons[0].difference !== undefined && <th>Difference</th>}
+                  {result.comparisons[0].confidenceInterval95 && <th>95% CI</th>}
+                  <th>P (raw)</th><th>P (adjusted)</th><th />
+                </tr>
               </thead>
               <tbody>
                 {result.comparisons.map((comparison, index) => (
                   <tr key={index}>
                     <td>{comparison.labelA} vs {comparison.labelB}</td>
+                    {comparison.difference !== undefined && (
+                      <td className="num">{comparison.difference.toFixed(3)}</td>
+                    )}
+                    {comparison.confidenceInterval95 && (
+                      <td className="num">
+                        {comparison.confidenceInterval95[0].toFixed(2)} to {comparison.confidenceInterval95[1].toFixed(2)}
+                      </td>
+                    )}
                     <td className="num">{formatP(comparison.pValue)}</td>
                     <td className="num">{formatP(comparison.pAdjusted)}</td>
-                    <td><span className={`stars ${comparison.pAdjusted < 0.05 ? 'sig' : ''}`}>{significanceStars(comparison.pAdjusted)}</span></td>
+                    <td><span className={`stars ${comparison.pAdjusted < 0.05 ? 'sig' : ''}`}>
+                      {significanceStars(comparison.pAdjusted)}
+                    </span></td>
                   </tr>
                 ))}
               </tbody>
@@ -637,16 +654,31 @@ function AnalysisView({ id }: { id: string }) {
         </section>
       )}
 
+      {result.tables.map((extra) => (
+        <section className="panel" key={extra.title}>
+          <h3>{extra.title}</h3>
+          <div className="table-scroll">
+            <table className="results">
+              <thead><tr>{extra.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+              <tbody>
+                {extra.rows.map((row, index) => (
+                  <tr key={index}>
+                    {row.map((cell, cellIndex) => (
+                      <td key={cellIndex} className={cellIndex === 0 ? '' : 'num'}>{cell}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
+
       {sentence && (
         <section className="panel">
           <div className="panel-head">
             <h3>Methods text</h3>
-            <button
-              onClick={() => {
-                navigator.clipboard?.writeText(sentence);
-                notify('Methods sentence copied.');
-              }}
-            >
+            <button onClick={() => { navigator.clipboard?.writeText(sentence); notify('Methods sentence copied.'); }}>
               Copy
             </button>
           </div>
@@ -669,38 +701,46 @@ function AnalysisView({ id }: { id: string }) {
 // figure
 // ===========================================================================
 
-const PLOT_TYPES: { id: PlotType; label: string; xyOnly?: boolean; groupOnly?: boolean }[] = [
-  { id: 'bar', label: 'Bar + points', groupOnly: true },
-  { id: 'dot', label: 'Dot plot', groupOnly: true },
-  { id: 'box', label: 'Box plot', groupOnly: true },
-  { id: 'violin', label: 'Violin', groupOnly: true },
-  { id: 'scatter', label: 'Scatter', xyOnly: true },
-  { id: 'line', label: 'Line', xyOnly: true },
-];
-
 function FigureView({ id }: { id: string }) {
   const project = useStore((s) => s.project);
-  const figure = project.figures.find((f) => f.id === id);
+  const figure = project.figures.find((entry) => entry.id === id);
   const updateFigure = useStore((s) => s.updateFigure);
   const updateStyle = useStore((s) => s.updateStyle);
   const renameNode = useStore((s) => s.renameNode);
   const notify = useStore((s) => s.notify);
   const select = useStore((s) => s.select);
   const svgRef = useRef<HTMLDivElement>(null);
-  const [traced, setTraced] = useState<number | null>(null);
 
-  if (!figure) return <Empty />;
+  const [traced, setTraced] = useState<number | null>(null);
+  const [selected, setSelected] = useState<Selected>(null);
+  const [editing, setEditing] = useState<Selected>(null);
+
+  if (!figure) return <NothingSelected />;
   const table = tableById(project, figure.tableId);
   if (!table) return <div className="view"><p>This figure has lost its data table.</p></div>;
 
   const linked = analysisById(project, figure.analysisId);
   const result = linked ? resultFor(table, linked) : null;
-  const isXy = table.shape === 'xy';
-  const available = PLOT_TYPES.filter((entry) => (isXy ? !entry.groupOnly : !entry.xyOnly));
+  const available = plotsForShape(table.shape);
+  const columns = valueColumns(table);
+
+  /** A click on a text element selects it and opens the editor immediately. */
+  const onSelect = (next: Selected) => {
+    setSelected(next);
+    setEditing(next && next.kind !== 'series' ? next : null);
+  };
+
+  const onEditText = (value: string) => {
+    if (!editing) return;
+    if (editing.kind === 'title') updateStyle(figure.id, { title: value });
+    if (editing.kind === 'xLabel') updateStyle(figure.id, { xLabel: value });
+    if (editing.kind === 'yLabel') updateStyle(figure.id, { yLabel: value });
+  };
 
   const exportSvg = () => {
     const node = svgRef.current?.querySelector('svg');
     if (!node) return;
+    setEditing(null);
     download(`${figure.name}.svg`, svgSource(node as SVGSVGElement), 'image/svg+xml');
     notify('SVG exported — text stays editable in Illustrator.');
   };
@@ -708,6 +748,7 @@ function FigureView({ id }: { id: string }) {
   const exportPng = async (dpi: number) => {
     const node = svgRef.current?.querySelector('svg');
     if (!node) return;
+    setEditing(null);
     try {
       const blob = await svgToPng(node as SVGSVGElement, dpi);
       download(`${figure.name}-${dpi}dpi.png`, blob, 'image/png');
@@ -721,13 +762,14 @@ function FigureView({ id }: { id: string }) {
     setTraced((current) => (current === rowIndex ? null : rowIndex));
   }, []);
 
+  const selectedColumn = selected?.kind === 'series'
+    ? columns.find((column) => column.id === selected.columnId)
+    : null;
+
   return (
     <div className="view">
-      <ViewHead
-        eyebrow={`Figure · from ${table.name}`}
-        title={figure.name}
-        onRename={(name) => renameNode('figure', figure.id, name)}
-      >
+      <ViewHead eyebrow={`Figure · from ${table.name}`} title={figure.name}
+        onRename={(name) => renameNode('figure', figure.id, name)}>
         <button onClick={() => select({ kind: 'table', id: table.id })}>Open data</button>
         <button onClick={exportSvg}>Export SVG</button>
         <button onClick={() => exportPng(300)}>PNG 300 dpi</button>
@@ -735,114 +777,199 @@ function FigureView({ id }: { id: string }) {
       </ViewHead>
 
       <div className="figure-layout">
-        <div className="canvas" ref={svgRef}>
-          <Plot
-            table={table}
-            figure={figure}
-            result={result}
-            onPickRow={traceRow}
-            highlightRow={traced}
-          />
-          {traced !== null && (
-            <p className="trace">
-              Highlighting row {traced + 1} of {table.name}.{' '}
-              <button className="link" onClick={() => select({ kind: 'table', id: table.id })}>Open it</button>
-              {' · '}
-              <button className="link" onClick={() => setTraced(null)}>Clear</button>
-            </p>
-          )}
-          {traced === null && <p className="trace muted">Click any point to trace it back to its row.</p>}
+        <div>
+          <div className="canvas" ref={svgRef}>
+            <Plot table={table} figure={figure} result={result}
+              onPickRow={traceRow} highlightRow={traced}
+              selected={selected} onSelect={onSelect}
+              editing={editing} onEditText={onEditText} onFinishEdit={() => setEditing(null)} />
+          </div>
+          <p className="trace">
+            {traced !== null ? (
+              <>
+                Highlighting row {traced + 1} of {table.name}.{' '}
+                <button className="link" onClick={() => select({ kind: 'table', id: table.id })}>Open it</button>
+                {' · '}
+                <button className="link" onClick={() => setTraced(null)}>Clear</button>
+              </>
+            ) : selectedColumn ? (
+              <><b>{selectedColumn.name}</b> selected — set its colour in the panel, or click the background to deselect.</>
+            ) : (
+              <span className="muted">Click the title or an axis label to edit it. Click a bar or point to select that series. Click a point to trace it back to its row.</span>
+            )}
+          </p>
         </div>
 
         <aside className="properties">
-          <h3>Figure</h3>
+          {selectedColumn && (
+            <div className="prop-group selected-group">
+              <h3>{selectedColumn.name}</h3>
+              <Field label="Colour">
+                <div className="swatches">
+                  {paletteFor(figure.style.palette).map((color) => (
+                    <button key={color} className="swatch"
+                      style={{ background: color, outline: figure.style.seriesColors[selectedColumn.id] === color ? '2px solid #131d1c' : 'none' }}
+                      title={color}
+                      onClick={() => updateStyle(figure.id, {
+                        seriesColors: { ...figure.style.seriesColors, [selectedColumn.id]: color },
+                      })} />
+                  ))}
+                  <input type="color" className="swatch-custom"
+                    value={figure.style.seriesColors[selectedColumn.id]
+                      ?? paletteFor(figure.style.palette)[
+                        columns.findIndex((column) => column.id === selectedColumn.id) % paletteFor(figure.style.palette).length
+                      ]}
+                    onChange={(event) => updateStyle(figure.id, {
+                      seriesColors: { ...figure.style.seriesColors, [selectedColumn.id]: event.target.value },
+                    })}
+                    title="Custom colour" />
+                </div>
+              </Field>
+              {figure.style.seriesColors[selectedColumn.id] && (
+                <button className="link" onClick={() => {
+                  const next = { ...figure.style.seriesColors };
+                  delete next[selectedColumn.id];
+                  updateStyle(figure.id, { seriesColors: next });
+                }}>Reset to palette colour</button>
+              )}
+            </div>
+          )}
 
-          <Field label="Plot type">
-            <select value={figure.plotType} onChange={(event) => updateFigure(figure.id, { plotType: event.target.value as PlotType })}>
-              {available.map((entry) => (
-                <option key={entry.id} value={entry.id}>{entry.label}</option>
-              ))}
-            </select>
-          </Field>
+          <div className="prop-group">
+            <h3>Plot</h3>
+            <Field label="Type">
+              <select value={figure.plotType}
+                onChange={(event) => updateFigure(figure.id, { plotType: event.target.value as PlotType })}>
+                {PLOT_GROUPS.map((group) => {
+                  const kinds = available.filter((kind) => kind.group === group);
+                  if (!kinds.length) return null;
+                  return (
+                    <optgroup key={group} label={group}>
+                      {kinds.map((kind) => <option key={kind.id} value={kind.id}>{kind.label}</option>)}
+                    </optgroup>
+                  );
+                })}
+              </select>
+            </Field>
 
-          <Field label="Significance from">
-            <select
-              value={figure.analysisId ?? ''}
-              onChange={(event) => updateFigure(figure.id, { analysisId: event.target.value || null })}
-            >
-              <option value="">None</option>
-              {project.analyses
-                .filter((analysis) => analysis.tableId === table.id)
-                .map((analysis) => (
+            <Field label="Significance from">
+              <select value={figure.analysisId ?? ''}
+                onChange={(event) => updateFigure(figure.id, { analysisId: event.target.value || null })}>
+                <option value="">None</option>
+                {project.analyses.filter((analysis) => analysis.tableId === table.id).map((analysis) => (
                   <option key={analysis.id} value={analysis.id}>{analysis.name}</option>
                 ))}
-            </select>
-          </Field>
-
-          <Field label="Title"><input value={figure.style.title} onChange={(e) => updateStyle(figure.id, { title: e.target.value })} placeholder={figure.name} /></Field>
-          <Field label="Y axis label"><input value={figure.style.yLabel} onChange={(e) => updateStyle(figure.id, { yLabel: e.target.value })} /></Field>
-          <Field label="X axis label"><input value={figure.style.xLabel} onChange={(e) => updateStyle(figure.id, { xLabel: e.target.value })} /></Field>
-
-          <Field label="Error bars">
-            <select value={figure.style.errorBars} onChange={(e) => updateStyle(figure.id, { errorBars: e.target.value as any })}>
-              <option value="sd">Standard deviation</option>
-              <option value="sem">Standard error (SEM)</option>
-              <option value="ci95">95% confidence interval</option>
-              <option value="none">None</option>
-            </select>
-          </Field>
-
-          <Field label="Palette">
-            <select value={figure.style.palette} onChange={(e) => updateStyle(figure.id, { palette: e.target.value })}>
-              {Object.keys(PALETTES).map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </Field>
-
-          <div className="field-row">
-            <Field label="Y min">
-              <input
-                type="number"
-                value={figure.style.yMin ?? ''}
-                placeholder="auto"
-                onChange={(e) => updateStyle(figure.id, { yMin: e.target.value === '' ? null : Number(e.target.value) })}
-              />
+              </select>
             </Field>
-            <Field label="Y max">
-              <input
-                type="number"
-                value={figure.style.yMax ?? ''}
-                placeholder="auto"
-                onChange={(e) => updateStyle(figure.id, { yMax: e.target.value === '' ? null : Number(e.target.value) })}
-              />
+
+            <Field label="Palette">
+              <select value={figure.style.palette} onChange={(event) => updateStyle(figure.id, { palette: event.target.value })}>
+                {Object.keys(PALETTES).map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
             </Field>
           </div>
 
-          <div className="field-row">
-            <Field label="Width"><input type="number" value={figure.style.width} onChange={(e) => updateStyle(figure.id, { width: Number(e.target.value) || 520 })} /></Field>
-            <Field label="Height"><input type="number" value={figure.style.height} onChange={(e) => updateStyle(figure.id, { height: Number(e.target.value) || 360 })} /></Field>
+          <div className="prop-group">
+            <h3>Axes</h3>
+            <Field label="Gridlines">
+              <select value={figure.style.grid} onChange={(event) => updateStyle(figure.id, { grid: event.target.value as any })}>
+                <option value="none">None</option>
+                <option value="horizontal">Horizontal only</option>
+                <option value="vertical">Vertical only</option>
+                <option value="both">Both</option>
+              </select>
+            </Field>
+            <div className="field-row">
+              <Field label="Y min">
+                <input type="number" value={figure.style.yMin ?? ''} placeholder="auto"
+                  onChange={(event) => updateStyle(figure.id, { yMin: event.target.value === '' ? null : Number(event.target.value) })} />
+              </Field>
+              <Field label="Y max">
+                <input type="number" value={figure.style.yMax ?? ''} placeholder="auto"
+                  onChange={(event) => updateStyle(figure.id, { yMax: event.target.value === '' ? null : Number(event.target.value) })} />
+              </Field>
+            </div>
+            <label className="check">
+              <input type="checkbox" checked={figure.style.logY}
+                onChange={(event) => updateStyle(figure.id, { logY: event.target.checked })} />
+              Log scale on Y
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={figure.style.frame}
+                onChange={(event) => updateStyle(figure.id, { frame: event.target.checked })} />
+              Box the plot area
+            </label>
           </div>
 
-          <div className="field-row">
-            <Field label="Point size"><input type="number" min={1} max={12} value={figure.style.pointSize} onChange={(e) => updateStyle(figure.id, { pointSize: Number(e.target.value) || 4 })} /></Field>
-            <Field label="Font size"><input type="number" min={8} max={24} value={figure.style.fontSize} onChange={(e) => updateStyle(figure.id, { fontSize: Number(e.target.value) || 13 })} /></Field>
+          <div className="prop-group">
+            <h3>Marks</h3>
+            <Field label="Error bars">
+              <select value={figure.style.errorBars} onChange={(event) => updateStyle(figure.id, { errorBars: event.target.value as any })}>
+                <option value="sd">Standard deviation</option>
+                <option value="sem">Standard error (SEM)</option>
+                <option value="ci95">95% confidence interval</option>
+                <option value="range">Min to max</option>
+                <option value="none">None</option>
+              </select>
+            </Field>
+            <div className="field-row">
+              <Field label="Point size">
+                <input type="number" min={1} max={14} value={figure.style.pointSize}
+                  onChange={(event) => updateStyle(figure.id, { pointSize: Number(event.target.value) || 4 })} />
+              </Field>
+              <Field label="Bar width">
+                <input type="number" min={0.1} max={1} step={0.05} value={figure.style.barWidth}
+                  onChange={(event) => updateStyle(figure.id, { barWidth: Number(event.target.value) || 0.55 })} />
+              </Field>
+            </div>
+            {['histogram', 'density'].includes(figure.plotType) && (
+              <Field label="Bins">
+                <input type="number" min={3} max={60} value={figure.style.bins}
+                  onChange={(event) => updateStyle(figure.id, { bins: Number(event.target.value) || 12 })} />
+              </Field>
+            )}
+            <label className="check">
+              <input type="checkbox" checked={figure.style.showPoints}
+                onChange={(event) => updateStyle(figure.id, { showPoints: event.target.checked })} />
+              Show individual points
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={figure.style.showSignificance}
+                onChange={(event) => updateStyle(figure.id, { showSignificance: event.target.checked })} />
+              Show significance brackets
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={figure.style.showLegend}
+                onChange={(event) => updateStyle(figure.id, { showLegend: event.target.checked })} />
+              Show legend
+            </label>
           </div>
 
-          <label className="check">
-            <input type="checkbox" checked={figure.style.showPoints} onChange={(e) => updateStyle(figure.id, { showPoints: e.target.checked })} />
-            Show individual points
-          </label>
-          <label className="check">
-            <input type="checkbox" checked={figure.style.showSignificance} onChange={(e) => updateStyle(figure.id, { showSignificance: e.target.checked })} />
-            Show significance brackets
-          </label>
+          <div className="prop-group">
+            <h3>Size</h3>
+            <div className="field-row">
+              <Field label="Width">
+                <input type="number" value={figure.style.width}
+                  onChange={(event) => updateStyle(figure.id, { width: Number(event.target.value) || 520 })} />
+              </Field>
+              <Field label="Height">
+                <input type="number" value={figure.style.height}
+                  onChange={(event) => updateStyle(figure.id, { height: Number(event.target.value) || 380 })} />
+              </Field>
+            </div>
+            <Field label="Font size">
+              <input type="number" min={8} max={26} value={figure.style.fontSize}
+                onChange={(event) => updateStyle(figure.id, { fontSize: Number(event.target.value) || 13 })} />
+            </Field>
+          </div>
 
           {figure.style.errorBars !== 'none' && (
             <p className="properties-note">
               Error bars show{' '}
-              {figure.style.errorBars === 'sd' ? 'the standard deviation' : figure.style.errorBars === 'sem' ? 'the standard error of the mean' : 'the 95% confidence interval'}.
-              State this in your caption.
+              {figure.style.errorBars === 'sd' ? 'the standard deviation'
+                : figure.style.errorBars === 'sem' ? 'the standard error of the mean'
+                : figure.style.errorBars === 'range' ? 'the full range'
+                : 'the 95% confidence interval'}. State this in your caption.
             </p>
           )}
         </aside>
@@ -855,16 +982,19 @@ function FigureView({ id }: { id: string }) {
 // shared
 // ===========================================================================
 
-function ViewHead({
-  eyebrow,
-  title,
-  onRename,
-  children,
-}: {
-  eyebrow: string;
-  title: string;
-  onRename: (name: string) => void;
-  children?: React.ReactNode;
+function NothingSelected() {
+  const addTable = useStore((s) => s.addTable);
+  return (
+    <div className="empty-stage">
+      <h2>Nothing open</h2>
+      <p>Import a file from the toolbar, or start a new data table.</p>
+      <button className="primary" onClick={() => addTable('column')}>New data table</button>
+    </div>
+  );
+}
+
+function ViewHead({ eyebrow, title, onRename, children }: {
+  eyebrow: string; title: string; onRename: (name: string) => void; children?: React.ReactNode;
 }) {
   return (
     <div className="view-head">

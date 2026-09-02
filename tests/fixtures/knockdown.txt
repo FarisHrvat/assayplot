@@ -1,0 +1,4 @@
+Untreated	siRNA-1	siRNA-2
+112	68	71
+108	64	66
+119	72	74

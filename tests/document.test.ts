@@ -8,6 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  SCHEMA_VERSION,
   type Analysis,
   type DataTable,
   demoProject,
@@ -192,7 +193,7 @@ test('a prototype-era project migrates forward to the current schema', () => {
     ],
   };
   const migrated = migrate(old);
-  assert.equal(migrated.schemaVersion, 3);
+  assert.equal(migrated.schemaVersion, SCHEMA_VERSION);
   assert.equal(migrated.tables.length, 1);
   assert.deepEqual(migrated.tables[0].columns.map((c) => c.name), ['Control', 'Treated']);
   assert.deepEqual(columnValues(migrated.tables[0], migrated.tables[0].columns[0].id), [10, 12]);
@@ -202,7 +203,7 @@ test('a prototype-era project migrates forward to the current schema', () => {
 test('opening a file that is not a project fails with a readable message', () => {
   assert.throws(
     () => deserializeProject(new TextEncoder().encode('this is not a project')),
-    /not a Statista project/
+    /not a AssayPlot project/
   );
 });
 
@@ -275,4 +276,62 @@ test('a partly blank XY table uses only the complete rows', () => {
   assert.equal(result.error, null);
   assert.equal(result.raw.n, 3, 'only the three complete pairs count');
   assert.ok(Math.abs((result.raw.slope as number) - 2) < 1e-12);
+});
+
+// ------------------------------------------------------- closing documents
+
+test('closing a table also closes what was built on it', async () => {
+  const { useStore } = await import('../src/app/store.ts');
+  const project = demoProject();
+  useStore.getState().replaceProject(project);
+
+  const tableId = project.tables[0].id;
+  assert.equal(useStore.getState().project.analyses.length, 1);
+  assert.equal(useStore.getState().project.figures.length, 1);
+
+  useStore.getState().deleteNode('table', tableId);
+
+  const after = useStore.getState().project;
+  assert.equal(after.tables.length, 0, 'the table is gone');
+  assert.equal(after.analyses.length, 0, 'its analysis went with it');
+  assert.equal(after.figures.length, 0, 'its figure went with it');
+});
+
+test('deleting an analysis leaves its table and unlinks dependent figures', async () => {
+  const { useStore } = await import('../src/app/store.ts');
+  const project = demoProject();
+  useStore.getState().replaceProject(project);
+
+  useStore.getState().deleteNode('analysis', project.analyses[0].id);
+
+  const after = useStore.getState().project;
+  assert.equal(after.tables.length, 1, 'the data survives');
+  assert.equal(after.analyses.length, 0);
+  assert.equal(after.figures.length, 1, 'the figure survives');
+  assert.equal(after.figures[0].analysisId, null, 'but no longer points at a missing analysis');
+});
+
+test('closing a table can be undone', async () => {
+  const { useStore } = await import('../src/app/store.ts');
+  useStore.getState().replaceProject(demoProject());
+  const before = useStore.getState().project;
+
+  useStore.getState().deleteNode('table', before.tables[0].id);
+  assert.equal(useStore.getState().project.tables.length, 0);
+
+  useStore.getState().undo();
+  assert.equal(useStore.getState().project.tables.length, 1);
+  assert.equal(useStore.getState().project.analyses.length, 1);
+  assert.equal(useStore.getState().project.figures.length, 1);
+});
+
+test('a new project starts empty but usable', async () => {
+  const { useStore } = await import('../src/app/store.ts');
+  const { emptyProject } = await import('../src/app/model.ts');
+  useStore.getState().replaceProject(emptyProject());
+  const project = useStore.getState().project;
+  assert.equal(project.tables.length, 1);
+  assert.equal(project.analyses.length, 0);
+  assert.equal(project.figures.length, 0);
+  assert.equal(useStore.getState().dirty, false, 'a fresh project is not dirty');
 });

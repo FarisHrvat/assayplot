@@ -1,3 +1,3 @@
 fn main() {
-    statista_lib::run();
+    assayplot_lib::run();
 }

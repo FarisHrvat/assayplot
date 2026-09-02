@@ -1,8 +1,8 @@
-# Statista: end-to-end build plan
+# AssayPlot: end-to-end build plan
 
 ## 1. Product definition
 
-Statista should help a wet-lab or life-science researcher complete the common workflow without writing code:
+AssayPlot should help a wet-lab or life-science researcher complete the common workflow without writing code:
 
 1. Start a project or import CSV/XLSX.
 2. Choose a data shape that matches the experiment.
@@ -78,7 +78,7 @@ The long-term statistical engine should either use a carefully audited TypeScrip
 Every project should be a ZIP container with a readable manifest:
 
 ```text
-statista-project/
+assayplot-project/
   manifest.json       # schema version, app version, provenance
   data/*.json          # immutable imported source plus derived tables
   analyses/*.json      # method, options, exclusions, random seed

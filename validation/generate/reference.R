@@ -1,4 +1,4 @@
-# Generates golden fixtures from R for the Statista statistics core.
+# Generates golden fixtures from R for the AssayPlot statistics core.
 #
 #   Rscript validation/generate/reference.R
 #
@@ -125,6 +125,43 @@ add("welch_large_magnitude", "welchTTest", list(a = huge_a, b = huge_b),
          df = unname(t.test(huge_a, huge_b)$parameter),
          pValue = t.test(huge_a, huge_b)$p.value),
     "values near 1e8, checks catastrophic cancellation")
+
+# ---- post-hoc and diagnostics -----------------------------------------
+tk_groups <- list(c(92,88,95,90,87,93), c(78,74,81,76,72,79), c(61,58,66,59,63,57))
+tk_v <- unlist(tk_groups); tk_f <- factor(rep(1:3, each = 6))
+tk <- TukeyHSD(aov(tk_v ~ tk_f))$tk_f
+# R orders pairs as 2-1, 3-1, 3-2 and reports B - A; Statista reports A - B.
+add("tukey", "tukeyHSD", list(groups = tk_groups),
+    list(differences = c(-tk[1, "diff"], -tk[2, "diff"], -tk[3, "diff"]),
+         pValues = c(tk[1, "p adj"], tk[2, "p adj"], tk[3, "p adj"]),
+         lower = c(-tk[1, "upr"], -tk[2, "upr"], -tk[3, "upr"]),
+         upper = c(-tk[1, "lwr"], -tk[2, "lwr"], -tk[3, "lwr"])),
+    "all pairs, exact family-wise error rate")
+
+for (nm in list(list("sw_normalish", c(2.1,3.4,1.9,4.5,3.3,2.8,5.1,3.9,2.2,4.1,3.0,3.7)),
+                list("sw_skewed", c(1,2,3,4,5,6,7,8,9,50)),
+                list("sw_tiny", c(2,4,4,5,9)))) {
+  s <- shapiro.test(nm[[2]])
+  add(nm[[1]], "shapiroWilk", list(x = nm[[2]]),
+      list(statistic = unname(s$statistic), pValue = s$p.value))
+}
+
+var_groups <- list(c(1,2,3,4), c(2,4,6,8), c(1,5,9,13))
+var_v <- unlist(var_groups); var_f <- factor(rep(1:3, each = 4))
+bt <- bartlett.test(var_v, var_f)
+add("bartlett", "bartlettTest", list(groups = var_groups),
+    list(statistic = unname(bt$statistic), df = unname(bt$parameter), pValue = bt$p.value))
+
+os <- t.test(c(2.1,3.4,1.9,4.5,3.3,2.8,5.1,3.9,2.2,4.1,3.0,3.7), mu = 3)
+add("onesample", "oneSampleTTest",
+    list(x = c(2.1,3.4,1.9,4.5,3.3,2.8,5.1,3.9,2.2,4.1,3.0,3.7), mu = 3),
+    list(statistic = unname(os$statistic), df = unname(os$parameter),
+         pValue = os$p.value, confidenceInterval95 = as.numeric(os$conf.int)))
+
+fr_matrix <- matrix(c(10,12,15, 11,14,17, 9,11,14, 12,13,18, 10,15,16), ncol = 3, byrow = TRUE)
+fr <- friedman.test(fr_matrix)
+add("friedman", "friedmanTest", list(matrix = lapply(seq_len(nrow(fr_matrix)), function(i) fr_matrix[i, ])),
+    list(statistic = unname(fr$statistic), df = unname(fr$parameter), pValue = fr$p.value))
 
 out <- list(
   generatedBy = paste("R", getRversion()),

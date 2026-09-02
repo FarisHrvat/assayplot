@@ -1,4 +1,6 @@
-# Statista
+# AssayPlot
+
+*An open-source alternative to GraphPad Prism, for people who work at a bench.*
 
 An open-source, offline-first application for statistics and publication figures,
 built for wet-lab researchers who currently pay for GraphPad Prism.
@@ -6,7 +8,7 @@ built for wet-lab researchers who currently pay for GraphPad Prism.
 Your data never leaves your machine. There is no account, no cloud, and no
 subscription.
 
-## Status: v0.2.0, testable alpha
+## Status: v0.3.0, testable alpha
 
 The application works end to end: import or type your data, run a defensible
 analysis, build a figure, export it, save the project, and reopen it later.
@@ -17,22 +19,34 @@ analysis, build a figure, export it, save the project, and reopen it later.
   and everything downstream of a cell recomputes the moment you change it.
 - **Data grid** with Column and XY shapes, paste straight from Excel, add and
   delete rows and columns, and full undo/redo (`⌘Z` / `⇧⌘Z`).
-- **Analyses**: descriptive statistics, Welch and Student t-tests, paired t-test,
-  Mann–Whitney, Wilcoxon signed-rank, one-way ANOVA, Kruskal–Wallis, Pearson and
-  Spearman correlation, and linear regression. Post-hoc pairwise comparisons with
-  Holm or Benjamini–Hochberg correction.
-- **Figures**: bar with points, dot, box, violin, scatter, and line. Error bars
-  (SD, SEM, 95% CI), significance brackets that stack without colliding, custom
-  axes and palettes, and export to SVG or PNG at 300/600 dpi.
+- **Imports** `.csv`, `.tsv`, `.txt`, `.xlsx`, `.xls`, and `.ods`, several files
+  at once. Close any table, analysis or figure from the × beside it.
+- **19 analyses**, grouped by what you are asking:
+  - *Describe* — descriptive statistics
+  - *One sample* — one-sample t-test against a value you choose
+  - *Two groups* — Welch, Student, paired t-test, Mann–Whitney, Wilcoxon
+  - *Three or more* — one-way ANOVA, Kruskal–Wallis, Friedman (repeated measures)
+  - *X versus Y* — Pearson, Spearman, linear regression, dose–response (EC50/IC50)
+  - *Counts* — chi-square (with Yates), Fisher's exact
+  - *Assumptions* — Shapiro–Wilk normality, Levene and Bartlett, Grubbs' outliers
+- **Post-hoc done properly**: Tukey HSD with real family-wise confidence
+  intervals, Dunn's test after Kruskal–Wallis, each-group-vs-control, or Holm
+  and Benjamini–Hochberg on plain pairwise tests.
+- **23 plot types**: bar, dot, box, violin, strip, beeswarm, mean±error,
+  lollipop, before/after lines, histogram, density, ECDF, Q–Q, scatter, line,
+  area, step, bubble, heatmap, correlation matrix, pie, and donut.
+- **Edit the figure by clicking it.** Click the title or an axis label to type a
+  new one in place. Click a bar, point, curve or wedge to select that series and
+  set its colour. Gridlines, log axes, error-bar definition, point size, bar
+  width, bins, and the legend are all switchable.
 - **Methods text** generated for each analysis, ready to paste into a manuscript.
 - **Click any point in a figure** to trace it back to the row it came from.
 - **Project files** are ZIP archives of readable JSON. You can open one with any
-  unzip tool and read your data without Statista installed.
+  unzip tool and read your data without AssayPlot installed.
 
-**Not built yet** — nonlinear regression and dose–response curves, two-way and
-repeated-measures ANOVA, survival analysis, normality and outlier tests,
-multi-panel layouts, and subcolumn replicates. See
-[docs/ROADMAP.md](docs/ROADMAP.md).
+**Not built yet** — two-way and repeated-measures ANOVA, survival analysis,
+confidence intervals on dose–response parameters, multi-panel layouts, and
+subcolumn replicates. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Run it
 
@@ -55,7 +69,7 @@ To build a double-clickable macOS application (about 8 MB):
 npm run desktop:build
 ```
 
-The result lands in `src-tauri/target/release/bundle/macos/Statista.app`. Use
+The result lands in `src-tauri/target/release/bundle/macos/AssayPlot.app`. Use
 `npm run desktop:build:installers` for platform installers. Builds are not yet
 code-signed, so macOS will warn on first launch.
 
@@ -69,15 +83,18 @@ engine against them without needing R installed. Closed-form statistics must
 agree with R to a relative error of 1e-10.
 
 ```bash
-npm test                                  # 95 tests, including 22 R parity cases
+npm test                                  # 113 tests, including 29 R parity cases
 Rscript validation/generate/reference.R   # regenerate the fixtures (needs R)
 ```
 
-Building this harness immediately found five real defects, including a
-Mann–Whitney tie correction that was wrong by 6% and missing exact tests for the
-small sample sizes that lab work actually uses. See the M0 commit for details.
+Building this harness found seven real defects that no amount of self-consistent
+testing would have caught: a Mann–Whitney tie correction wrong by 6%, a Wilcoxon
+tie term divided by 24 instead of 48, missing exact tests for the small samples
+lab work actually uses, tail p-values that underflowed to zero, a Friedman test
+being handed its matrix transposed, and its tie correction summing group sizes
+instead of `t³ − t`. Every one was found by comparing against R.
 
-Statista is **not validated for clinical or regulatory use**. For consequential
+AssayPlot is **not validated for clinical or regulatory use**. For consequential
 decisions, confirm results with a statistician.
 
 ## Principles
@@ -103,5 +120,8 @@ tests/         unit, document-model, and R parity suites
 
 AGPL-3.0-or-later.
 
-The name "Statista" is a working title only. It collides with an existing
-trademark and must be changed before any public release.
+## The name
+
+Checked before adoption: `assayplot` is free on npm, GitHub, PyPI, and
+crates.io, `assayplot.org` is unregistered, and no software product uses it.
+The earlier working title collided with a large market-data company's trademark.

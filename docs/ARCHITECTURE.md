@@ -2,7 +2,7 @@
 
 ## Decision
 
-Statista will be designed as an offline-first application that runs analysis, rendering, import, and export on the researcher’s computer. The user interface will be built with web technologies and packaged as a cross-platform desktop application. A browser build may be published as a companion mode, but no cloud service is required for the core product.
+AssayPlot will be designed as an offline-first application that runs analysis, rendering, import, and export on the researcher’s computer. The user interface will be built with web technologies and packaged as a cross-platform desktop application. A browser build may be published as a companion mode, but no cloud service is required for the core product.
 
 ## Why
 
