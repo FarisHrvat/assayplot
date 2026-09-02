@@ -517,6 +517,9 @@ function EditableText({
           autoFocus
           defaultValue={value}
           placeholder={placeholder}
+          // Select the existing text so typing replaces the label, which is
+          // what clicking straight onto a title implies.
+          onFocus={(event) => event.currentTarget.select()}
           onChange={(event) => onEditText?.(event.target.value)}
           onBlur={() => onFinishEdit?.()}
           onKeyDown={(event) => {
