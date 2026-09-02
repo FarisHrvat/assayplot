@@ -163,6 +163,39 @@ fr <- friedman.test(fr_matrix)
 add("friedman", "friedmanTest", list(matrix = lapply(seq_len(nrow(fr_matrix)), function(i) fr_matrix[i, ])),
     list(statistic = unname(fr$statistic), df = unname(fr$parameter), pValue = fr$p.value))
 
+# ---- two-way ANOVA and survival ---------------------------------------
+tw_value <- c(12,14,13, 18,20,19, 25,27,26, 10,11,12, 15,17,16, 19,21,20)
+tw_a <- factor(rep(c("Male","Female"), each = 9), levels = c("Male","Female"))
+tw_b <- factor(rep(rep(c("Ctrl","Low","High"), each = 3), 2), levels = c("Ctrl","Low","High"))
+tw <- summary(aov(tw_value ~ tw_a * tw_b))[[1]]
+add("twoway", "twoWayAnova",
+    list(rows = lapply(seq_along(tw_value), function(i)
+      list(factorA = as.character(tw_a[i]), factorB = as.character(tw_b[i]), value = tw_value[i]))),
+    list(fA = tw[["F value"]][1], fB = tw[["F value"]][2], fInteraction = tw[["F value"]][3],
+         pA = tw[["Pr(>F)"]][1], pB = tw[["Pr(>F)"]][2], pInteraction = tw[["Pr(>F)"]][3],
+         dfA = tw[["Df"]][1], dfB = tw[["Df"]][2], dfInteraction = tw[["Df"]][3], dfError = tw[["Df"]][4]),
+    "balanced 2 x 3 with three replicates per cell")
+
+if (requireNamespace("survival", quietly = TRUE)) {
+  library(survival)
+  sv_t <- c(5,6,6,2,4, 4,3,7,8,9)
+  sv_e <- c(1,0,1,1,1, 0,1,1,0,1)
+  sv_g <- c(rep(1,5), rep(2,5))
+  sd <- survdiff(Surv(sv_t, sv_e) ~ sv_g)
+  add("logrank", "logRankTest",
+      list(timesA = sv_t[1:5], eventsA = sv_e[1:5], timesB = sv_t[6:10], eventsB = sv_e[6:10]),
+      list(statistic = unname(sd$chisq), pValue = 1 - pchisq(sd$chisq, 1)),
+      "Mantel-Cox, two groups")
+
+  km <- survfit(Surv(sv_t[1:5], sv_e[1:5]) ~ 1)
+  add("kaplanmeier", "kaplanMeier", list(times = sv_t[1:5], events = sv_e[1:5]),
+      list(n = 5, events = sum(sv_e[1:5]),
+           median = unname(summary(km)$table["median"])),
+      "product-limit estimate")
+} else {
+  cat("note: R package 'survival' not installed, skipping survival fixtures\n")
+}
+
 out <- list(
   generatedBy = paste("R", getRversion()),
   generatedAt = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),

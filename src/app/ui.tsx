@@ -5,7 +5,9 @@ import {
   type DataTable,
   type Method,
   type PlotType,
+  type TableShape,
   APP_VERSION,
+  SHAPE_INFO,
   METHOD_FAMILIES,
   availableMethods,
   columnValues,
@@ -379,6 +381,11 @@ function Section({ title, action, children }: { title: string; action: React.Rea
 // data table
 // ===========================================================================
 
+/** Short badges shown under a column heading when the shape gives it a role. */
+const ROLE_LABEL: Record<string, string> = {
+  x: 'X', y: 'Y', label: 'row factor', time: 'time', event: 'event 1/0', group: 'group',
+};
+
 /** Height of one grid row in pixels. Must match `.grid td` in styles.css. */
 const ROW_HEIGHT = 27;
 /** Rows rendered beyond the viewport, so scrolling does not flash blank. */
@@ -449,9 +456,11 @@ function TableView({ id }: { id: string }) {
     <div className="view">
       <ViewHead eyebrow={`Data table · ${table.shape === 'xy' ? 'XY' : 'Column'}`} title={table.name}
         onRename={(name) => renameNode('table', table.id, name)}>
-        <select value={table.shape} onChange={(event) => setTableShape(table.id, event.target.value as any)} aria-label="Table shape">
-          <option value="column">Column — each column is a group</option>
-          <option value="xy">XY — first column is X</option>
+        <select value={table.shape} onChange={(event) => setTableShape(table.id, event.target.value as TableShape)}
+          aria-label="Table shape" title={SHAPE_INFO[table.shape].help}>
+          {(Object.keys(SHAPE_INFO) as TableShape[]).map((shape) => (
+            <option key={shape} value={shape}>{SHAPE_INFO[shape].label}</option>
+          ))}
         </select>
         <button onClick={() => addAnalysis(table.id)}>Analyse</button>
         <button onClick={() => addFigure(table.id)}>Graph</button>
@@ -459,6 +468,7 @@ function TableView({ id }: { id: string }) {
       </ViewHead>
 
       <p className="hint">
+        {SHAPE_INFO[table.shape].help}{' '}
         Type into any cell, or paste a block straight from Excel. Every change flows through to
         the {analyses} analysis{analyses === 1 ? '' : 'es'} and {figures} figure{figures === 1 ? '' : 's'} built on this table.
       </p>
@@ -481,7 +491,9 @@ function TableView({ id }: { id: string }) {
                       onClick={() => deleteColumn(table.id, columnIndex)}
                       disabled={table.columns.length <= 1}>×</button>
                   </div>
-                  {table.shape === 'xy' && <span className="col-role">{column.role === 'x' ? 'X' : 'Y'}</span>}
+                  {table.shape !== 'column' && (
+                    <span className="col-role">{ROLE_LABEL[column.role] ?? column.role}</span>
+                  )}
                 </th>
               ))}
               <th className="add-col"><button onClick={() => addColumn(table.id)} title="Add column">＋</button></th>

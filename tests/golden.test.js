@@ -62,6 +62,11 @@ const RUNNERS = {
   holmAdjust: ({ p }) => ({ adjusted: stats.holmAdjust(p) }),
   benjaminiHochberg: ({ p }) => ({ adjusted: stats.benjaminiHochberg(p) }),
   // The fixture stores the design by subject; the procedure takes it by condition.
+  twoWayAnova: ({ rows }) => stats.twoWayAnova(rows),
+  logRankTest: ({ timesA, eventsA, timesB, eventsB }) =>
+    stats.logRankTest(timesA, eventsA, timesB, eventsB),
+  kaplanMeier: ({ times, events }) => stats.kaplanMeier(times, events),
+
   friedmanTest: ({ matrix }) =>
     stats.friedmanTest(matrix[0].map((_, index) => matrix.map((row) => row[index]))),
 

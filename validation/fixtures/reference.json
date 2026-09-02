@@ -1,6 +1,6 @@
 {
   "generatedBy": "R 4.4.2",
-  "generatedAt": "2026-09-02T15:19:11+0200",
+  "generatedAt": "2026-09-02T18:56:58+0200",
   "note": "Golden values produced by R. Regenerate with validation/generate/reference.R.",
   "cases": [
     {
@@ -429,6 +429,146 @@
         "pValue": 0.00673794699908547
       },
       "note": null
+    },
+    {
+      "id": "twoway",
+      "procedure": "twoWayAnova",
+      "input": {
+        "rows": [
+          {
+            "factorA": "Male",
+            "factorB": "Ctrl",
+            "value": 12
+          },
+          {
+            "factorA": "Male",
+            "factorB": "Ctrl",
+            "value": 14
+          },
+          {
+            "factorA": "Male",
+            "factorB": "Ctrl",
+            "value": 13
+          },
+          {
+            "factorA": "Male",
+            "factorB": "Low",
+            "value": 18
+          },
+          {
+            "factorA": "Male",
+            "factorB": "Low",
+            "value": 20
+          },
+          {
+            "factorA": "Male",
+            "factorB": "Low",
+            "value": 19
+          },
+          {
+            "factorA": "Male",
+            "factorB": "High",
+            "value": 25
+          },
+          {
+            "factorA": "Male",
+            "factorB": "High",
+            "value": 27
+          },
+          {
+            "factorA": "Male",
+            "factorB": "High",
+            "value": 26
+          },
+          {
+            "factorA": "Female",
+            "factorB": "Ctrl",
+            "value": 10
+          },
+          {
+            "factorA": "Female",
+            "factorB": "Ctrl",
+            "value": 11
+          },
+          {
+            "factorA": "Female",
+            "factorB": "Ctrl",
+            "value": 12
+          },
+          {
+            "factorA": "Female",
+            "factorB": "Low",
+            "value": 15
+          },
+          {
+            "factorA": "Female",
+            "factorB": "Low",
+            "value": 17
+          },
+          {
+            "factorA": "Female",
+            "factorB": "Low",
+            "value": 16
+          },
+          {
+            "factorA": "Female",
+            "factorB": "High",
+            "value": 19
+          },
+          {
+            "factorA": "Female",
+            "factorB": "High",
+            "value": 21
+          },
+          {
+            "factorA": "Female",
+            "factorB": "High",
+            "value": 20
+          }
+        ]
+      },
+      "expected": {
+        "fA": 60.4999999999999,
+        "fB": 181.5,
+        "fInteraction": 6.50000000000002,
+        "pA": 5.00824925395519e-06,
+        "pB": 1.073741824e-09,
+        "pInteraction": 0.0122305904639999,
+        "dfA": 1,
+        "dfB": 2,
+        "dfInteraction": 2,
+        "dfError": 12
+      },
+      "note": "balanced 2 x 3 with three replicates per cell"
+    },
+    {
+      "id": "logrank",
+      "procedure": "logRankTest",
+      "input": {
+        "timesA": [5, 6, 6, 2, 4],
+        "eventsA": [1, 0, 1, 1, 1],
+        "timesB": [4, 3, 7, 8, 9],
+        "eventsB": [0, 1, 1, 0, 1]
+      },
+      "expected": {
+        "statistic": 2.21588980936221,
+        "pValue": 0.136596285054037
+      },
+      "note": "Mantel-Cox, two groups"
+    },
+    {
+      "id": "kaplanmeier",
+      "procedure": "kaplanMeier",
+      "input": {
+        "times": [5, 6, 6, 2, 4],
+        "events": [1, 0, 1, 1, 1]
+      },
+      "expected": {
+        "n": 5,
+        "events": 4,
+        "median": 5
+      },
+      "note": "product-limit estimate"
     }
   ]
 }

@@ -18,7 +18,9 @@ import {
   type Figure,
   type FigureStyle,
   type PlotType,
+  type TableShape,
   columnValues,
+  survivalRows,
   significanceStars,
   valueColumns,
   xColumn,
@@ -139,14 +141,14 @@ const MARGIN = { top: 40, right: 26, bottom: 58, left: 66 };
 // plot catalogue
 // ---------------------------------------------------------------------------
 
-export type PlotGroup = 'Compare groups' | 'Distribution' | 'X versus Y' | 'Matrix' | 'Parts of a whole';
+export type PlotGroup = 'Compare groups' | 'Distribution' | 'X versus Y' | 'Matrix' | 'Parts of a whole' | 'Survival';
 
 export interface PlotKind {
   id: PlotType;
   label: string;
   group: PlotGroup;
   /** Which table shape the plot expects. */
-  shape: 'column' | 'xy';
+  shape: TableShape;
 }
 
 export const PLOT_KINDS: PlotKind[] = [
@@ -176,12 +178,16 @@ export const PLOT_KINDS: PlotKind[] = [
 
   { id: 'pie', label: 'Pie', group: 'Parts of a whole', shape: 'column' },
   { id: 'donut', label: 'Donut', group: 'Parts of a whole', shape: 'column' },
+
+  { id: 'survival', label: 'Kaplan–Meier curve', group: 'Survival', shape: 'survival' },
 ];
 
-export const PLOT_GROUPS: PlotGroup[] = ['Compare groups', 'Distribution', 'X versus Y', 'Matrix', 'Parts of a whole'];
+export const PLOT_GROUPS: PlotGroup[] = ['Compare groups', 'Distribution', 'X versus Y', 'Matrix', 'Parts of a whole', 'Survival'];
 
-export function plotsForShape(shape: 'column' | 'xy'): PlotKind[] {
-  return PLOT_KINDS.filter((kind) => kind.shape === shape);
+export function plotsForShape(shape: TableShape): PlotKind[] {
+  // A Grouped table plots like a Column table: its value columns are the series.
+  const effective = shape === 'grouped' ? 'column' : shape;
+  return PLOT_KINDS.filter((kind) => kind.shape === effective);
 }
 
 const XY_PLOTS: PlotType[] = ['scatter', 'line', 'area', 'step', 'bubble'];
@@ -221,7 +227,9 @@ export function Plot(props: PlotProps) {
   // The legend sits top-right beside the title. With more than two series it
   // would run into the title, so it moves to its own row beneath the plot and
   // the plot area gives up the height for it.
-  const seriesCount = valueColumns(table).length;
+  const seriesCount = plotType === 'survival'
+    ? new Set(survivalRows(table).map((subject) => subject.group)).size
+    : valueColumns(table).length;
   const legendAtBottom = style.showLegend && seriesCount > 2;
   const plotBottom = height - MARGIN.bottom - (legendAtBottom ? 22 : 0);
 
@@ -250,6 +258,7 @@ export function Plot(props: PlotProps) {
     </svg>
   );
 
+  if (plotType === 'survival') return canvas(<SurvivalPlot {...shared} />);
   if (plotType === 'heatmap' || plotType === 'correlation') return canvas(<MatrixPlot {...shared} />);
   if (plotType === 'pie' || plotType === 'donut') return canvas(<PiePlot {...shared} />);
   if (DISTRIBUTION_PLOTS.includes(plotType)) return canvas(<DistributionPlot {...shared} />);
@@ -897,6 +906,105 @@ function DistributionPlot(props: any) {
       })}
 
       {legend}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// survival
+// ---------------------------------------------------------------------------
+
+/**
+ * Kaplan-Meier step curves, one per group, with censoring ticks. Survival is
+ * constant between event times and drops at each one, so the curve is drawn as
+ * a staircase rather than interpolated - joining the points with straight lines
+ * would imply a smooth decline that the estimator does not claim.
+ */
+function SurvivalPlot(props: any) {
+  const { table, figure, plotLeft, plotRight, plotTop, plotBottom, height, font, selected, onSelect } = props;
+  const style: FigureStyle = figure.style;
+  const subjects = survivalRows(table);
+  if (subjects.length < 2) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Enter a time and a 0/1 event for at least two subjects" />;
+  }
+
+  const names = [...new Set(subjects.map((subject) => subject.group))];
+  const palette = paletteFor(style.palette);
+  const groups = names.map((name, index) => {
+    const inGroup = subjects.filter((subject) => subject.group === name)
+      .sort((a, b) => a.time - b.time);
+    // Kaplan-Meier product-limit estimate.
+    const steps: { time: number; survival: number }[] = [{ time: 0, survival: 1 }];
+    let survival = 1;
+    const eventTimes = [...new Set(inGroup.filter((s) => s.event === 1).map((s) => s.time))].sort((a, b) => a - b);
+    for (const time of eventTimes) {
+      const atRisk = inGroup.filter((subject) => subject.time >= time).length;
+      const events = inGroup.filter((subject) => subject.time === time && subject.event === 1).length;
+      if (atRisk > 0) survival *= 1 - events / atRisk;
+      steps.push({ time, survival });
+    }
+    const censored = inGroup.filter((subject) => subject.event === 0);
+    const survivalAt = (time: number) => {
+      let value = 1;
+      for (const step of steps) if (step.time <= time) value = step.survival;
+      return value;
+    };
+    return {
+      name, index,
+      color: style.seriesColors[name] ?? palette[index % palette.length],
+      steps,
+      censored: censored.map((subject) => ({ time: subject.time, survival: survivalAt(subject.time) })),
+      lastTime: Math.max(...inGroup.map((subject) => subject.time)),
+    };
+  });
+
+  const maxTime = style.xMax ?? Math.max(...subjects.map((subject) => subject.time));
+  const xScale = makeScale(style.xMin ?? 0, maxTime, plotLeft, plotRight);
+  const yScale = makeScale(style.yMin ?? 0, style.yMax ?? 1, plotBottom, plotTop);
+  const xTicks = niceTicks(xScale.min, maxTime);
+  const yTicks = [0, 0.25, 0.5, 0.75, 1];
+
+  return (
+    <>
+      <Grid style={style} xTicks={xTicks} yTicks={yTicks} xScale={xScale} yScale={yScale}
+        plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
+      <YAxis {...props} ticks={yTicks} yScale={yScale} />
+      <XAxisNumeric {...props} ticks={xTicks} xScale={xScale} fallbackLabel="Time" />
+
+      {groups.map((group) => {
+        const isSelected = selected?.kind === 'series' && selected.columnId === group.name;
+        const points: string[] = [];
+        group.steps.forEach((step, index) => {
+          if (index > 0) points.push(`${xScale.toPixel(step.time)},${yScale.toPixel(group.steps[index - 1].survival)}`);
+          points.push(`${xScale.toPixel(step.time)},${yScale.toPixel(step.survival)}`);
+        });
+        // Carry the curve flat to the last follow-up time.
+        const final = group.steps[group.steps.length - 1];
+        if (group.lastTime > final.time) {
+          points.push(`${xScale.toPixel(group.lastTime)},${yScale.toPixel(final.survival)}`);
+        }
+        return (
+          <g key={group.name} style={{ cursor: 'pointer' }}
+            onClick={(event) => { event.stopPropagation(); onSelect?.({ kind: 'series', columnId: group.name, index: group.index }); }}>
+            <polyline points={points.join(' ')} fill="none"
+              stroke={group.color} strokeWidth={isSelected ? 3.5 : 2} />
+            {group.censored.map((mark, index) => (
+              <line key={index}
+                x1={xScale.toPixel(mark.time)} x2={xScale.toPixel(mark.time)}
+                y1={yScale.toPixel(mark.survival) - 5} y2={yScale.toPixel(mark.survival) + 5}
+                stroke={group.color} strokeWidth={1.6}>
+                <title>{`Censored at ${mark.time}`}</title>
+              </line>
+            ))}
+          </g>
+        );
+      })}
+
+      {style.showLegend && groups.length > 1 && (
+        <Legend items={groups.map((group) => ({ label: group.name, color: group.color }))}
+          placement={props.legendPlacement} font={font} />
+      )}
     </>
   );
 }

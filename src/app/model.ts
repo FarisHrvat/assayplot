@@ -15,7 +15,7 @@ import * as diagnostics from '../core/diagnostics.js';
 export type Cell = number | string | null;
 
 /** Role a column plays in an analysis. */
-export type ColumnRole = 'group' | 'x' | 'y' | 'label' | 'ignore';
+export type ColumnRole = 'group' | 'x' | 'y' | 'label' | 'time' | 'event' | 'ignore';
 
 /**
  * Table shapes, following the way experiments are actually laid out rather than
@@ -23,7 +23,27 @@ export type ColumnRole = 'group' | 'x' | 'y' | 'label' | 'ignore';
  * group and each row is a replicate — the layout a bench scientist already has
  * in their notebook.
  */
-export type TableShape = 'column' | 'xy';
+export type TableShape = 'column' | 'xy' | 'grouped' | 'survival';
+
+/** What each shape means, shown in the shape picker. */
+export const SHAPE_INFO: Record<TableShape, { label: string; help: string }> = {
+  column: {
+    label: 'Column — each column is a group',
+    help: 'One column per treatment, one row per replicate. The usual layout for comparing groups.',
+  },
+  grouped: {
+    label: 'Grouped — two factors',
+    help: 'First column names the row factor (repeat a label for replicates); the remaining columns are the levels of the second factor.',
+  },
+  xy: {
+    label: 'XY — first column is X',
+    help: 'Paired measurements for correlation, regression, and dose–response.',
+  },
+  survival: {
+    label: 'Survival — time, event, group',
+    help: 'One row per subject: time to event or last follow-up, 1 if the event happened and 0 if censored, and which group they were in.',
+  },
+};
 
 export interface Column {
   id: string;
@@ -57,6 +77,8 @@ export type Method =
   | 'doseresponse'
   | 'chisq'
   | 'fisher'
+  | 'twoway'
+  | 'survival'
   | 'normality'
   | 'variance'
   | 'outlier';
@@ -90,7 +112,8 @@ export type PlotType =
   | 'histogram' | 'density' | 'ecdf' | 'qq'
   | 'scatter' | 'line' | 'area' | 'step' | 'bubble'
   | 'heatmap' | 'correlation'
-  | 'pie' | 'donut';
+  | 'pie' | 'donut'
+  | 'survival';
 
 export type ErrorBarKind = 'none' | 'sd' | 'sem' | 'ci95' | 'range';
 export type GridKind = 'none' | 'horizontal' | 'vertical' | 'both';
@@ -186,7 +209,64 @@ export function valueColumns(table: DataTable): Column[] {
   if (table.shape === 'xy') {
     return table.columns.filter((column) => column.role === 'y');
   }
-  return table.columns.filter((column) => column.role !== 'ignore' && column.role !== 'label');
+  if (table.shape === 'survival') return [];
+  return table.columns.filter(
+    (column) => !['ignore', 'label', 'time', 'event'].includes(column.role)
+  );
+}
+
+/** The column naming the row factor in a Grouped table. */
+export function labelColumn(table: DataTable): Column | null {
+  return table.columns.find((column) => column.role === 'label') ?? null;
+}
+
+export function roleColumn(table: DataTable, role: ColumnRole): Column | null {
+  return table.columns.find((column) => column.role === role) ?? null;
+}
+
+/** One row per subject for a survival table, dropping incomplete rows. */
+export function survivalRows(table: DataTable): { time: number; event: number; group: string }[] {
+  const time = roleColumn(table, 'time');
+  const event = roleColumn(table, 'event');
+  const group = roleColumn(table, 'group');
+  if (!time || !event) return [];
+  const timeIndex = columnIndex(table, time.id);
+  const eventIndex = columnIndex(table, event.id);
+  const groupIndex = group ? columnIndex(table, group.id) : -1;
+
+  const out: { time: number; event: number; group: string }[] = [];
+  for (const row of table.rows) {
+    const t = numericCell(row[timeIndex]);
+    const rawEvent = row[eventIndex];
+    if (t === null || t < 0) continue;
+    const e = numericCell(rawEvent);
+    const flag = e !== null
+      ? (e === 1 ? 1 : e === 0 ? 0 : null)
+      : ['event', 'died', 'yes', 'true', '1'].includes(String(rawEvent ?? '').toLowerCase()) ? 1
+      : ['censored', 'alive', 'no', 'false', '0'].includes(String(rawEvent ?? '').toLowerCase()) ? 0
+      : null;
+    if (flag === null) continue;
+    const label = groupIndex >= 0 ? String(row[groupIndex] ?? '').trim() : '';
+    out.push({ time: t, event: flag, group: label || 'All subjects' });
+  }
+  return out;
+}
+
+/** Long-format rows for a Grouped table: row-factor label, column name, value. */
+export function groupedRows(table: DataTable): { factorA: string; factorB: string; value: number }[] {
+  const label = labelColumn(table);
+  if (!label) return [];
+  const labelIndex = columnIndex(table, label.id);
+  const out: { factorA: string; factorB: string; value: number }[] = [];
+  for (const row of table.rows) {
+    const level = String(row[labelIndex] ?? '').trim();
+    if (!level) continue;
+    for (const column of valueColumns(table)) {
+      const value = numericCell(row[columnIndex(table, column.id)]);
+      if (value !== null) out.push({ factorA: level, factorB: column.name, value });
+    }
+  }
+  return out;
 }
 
 export function xColumn(table: DataTable): Column | null {
@@ -231,7 +311,8 @@ export function completeRows(table: DataTable, columnIds: string[]): number[][] 
 
 export type MethodFamily =
   | 'Describe' | 'One sample' | 'Two groups' | 'Three or more groups'
-  | 'X versus Y' | 'Categorical counts' | 'Assumptions and screening';
+  | 'X versus Y' | 'Two factors' | 'Survival' | 'Categorical counts'
+  | 'Assumptions and screening';
 
 export interface MethodInfo {
   id: Method;
@@ -241,40 +322,46 @@ export interface MethodInfo {
   assumes: string;
   minGroups: number;
   maxGroups: number;
-  requiresXy: boolean;
+  /** Table shapes this method can run on. */
+  shapes: TableShape[];
 }
 
 export const METHODS: MethodInfo[] = [
-  { id: 'descriptive', label: 'Descriptive statistics', family: 'Describe', assumes: 'Nothing beyond numeric values.', minGroups: 1, maxGroups: Infinity, requiresXy: false },
+  { id: 'descriptive', label: 'Descriptive statistics', family: 'Describe', assumes: 'Nothing beyond numeric values.', minGroups: 1, maxGroups: Infinity, shapes: ['column', 'grouped', 'xy'] },
 
-  { id: 'onesample', label: 'One-sample t-test', family: 'One sample', assumes: 'One group of roughly normal values, compared against a fixed number you choose.', minGroups: 1, maxGroups: 1, requiresXy: false },
+  { id: 'onesample', label: 'One-sample t-test', family: 'One sample', assumes: 'One group of roughly normal values, compared against a fixed number you choose.', minGroups: 1, maxGroups: 1, shapes: ['column'] },
 
-  { id: 'welch', label: 'Welch t-test (unequal variance)', family: 'Two groups', assumes: 'Two independent groups. Roughly normal, but variances may differ.', minGroups: 2, maxGroups: 2, requiresXy: false },
-  { id: 'student', label: "Student's t-test (equal variance)", family: 'Two groups', assumes: 'Two independent groups, roughly normal, with similar variances.', minGroups: 2, maxGroups: 2, requiresXy: false },
-  { id: 'paired', label: 'Paired t-test', family: 'Two groups', assumes: 'Two measurements on the same subjects, in matching row order.', minGroups: 2, maxGroups: 2, requiresXy: false },
-  { id: 'mannwhitney', label: 'Mann–Whitney U', family: 'Two groups', assumes: 'Two independent groups. No distributional assumption; compares ranks.', minGroups: 2, maxGroups: 2, requiresXy: false },
-  { id: 'wilcoxon', label: 'Wilcoxon signed-rank', family: 'Two groups', assumes: 'Two paired measurements, in matching row order. Compares ranks.', minGroups: 2, maxGroups: 2, requiresXy: false },
+  { id: 'welch', label: 'Welch t-test (unequal variance)', family: 'Two groups', assumes: 'Two independent groups. Roughly normal, but variances may differ.', minGroups: 2, maxGroups: 2, shapes: ['column'] },
+  { id: 'student', label: "Student's t-test (equal variance)", family: 'Two groups', assumes: 'Two independent groups, roughly normal, with similar variances.', minGroups: 2, maxGroups: 2, shapes: ['column'] },
+  { id: 'paired', label: 'Paired t-test', family: 'Two groups', assumes: 'Two measurements on the same subjects, in matching row order.', minGroups: 2, maxGroups: 2, shapes: ['column'] },
+  { id: 'mannwhitney', label: 'Mann–Whitney U', family: 'Two groups', assumes: 'Two independent groups. No distributional assumption; compares ranks.', minGroups: 2, maxGroups: 2, shapes: ['column'] },
+  { id: 'wilcoxon', label: 'Wilcoxon signed-rank', family: 'Two groups', assumes: 'Two paired measurements, in matching row order. Compares ranks.', minGroups: 2, maxGroups: 2, shapes: ['column'] },
 
-  { id: 'anova', label: 'One-way ANOVA', family: 'Three or more groups', assumes: 'Three or more independent groups, roughly normal, similar variances.', minGroups: 3, maxGroups: Infinity, requiresXy: false },
-  { id: 'kruskal', label: 'Kruskal–Wallis', family: 'Three or more groups', assumes: 'Three or more independent groups. Rank-based, no normality assumed.', minGroups: 3, maxGroups: Infinity, requiresXy: false },
-  { id: 'friedman', label: 'Friedman (repeated measures)', family: 'Three or more groups', assumes: 'Three or more measurements on the same subjects. Each row is one subject.', minGroups: 3, maxGroups: Infinity, requiresXy: false },
+  { id: 'anova', label: 'One-way ANOVA', family: 'Three or more groups', assumes: 'Three or more independent groups, roughly normal, similar variances.', minGroups: 3, maxGroups: Infinity, shapes: ['column'] },
+  { id: 'kruskal', label: 'Kruskal–Wallis', family: 'Three or more groups', assumes: 'Three or more independent groups. Rank-based, no normality assumed.', minGroups: 3, maxGroups: Infinity, shapes: ['column'] },
+  { id: 'friedman', label: 'Friedman (repeated measures)', family: 'Three or more groups', assumes: 'Three or more measurements on the same subjects. Each row is one subject.', minGroups: 3, maxGroups: Infinity, shapes: ['column'] },
 
-  { id: 'correlation', label: 'Pearson correlation', family: 'X versus Y', assumes: 'Paired X and Y measurements with a roughly linear relationship.', minGroups: 1, maxGroups: Infinity, requiresXy: true },
-  { id: 'spearman', label: 'Spearman rank correlation', family: 'X versus Y', assumes: 'Paired X and Y. Monotone rather than linear association.', minGroups: 1, maxGroups: Infinity, requiresXy: true },
-  { id: 'regression', label: 'Simple linear regression', family: 'X versus Y', assumes: 'Y depends linearly on X, with roughly constant scatter.', minGroups: 1, maxGroups: Infinity, requiresXy: true },
-  { id: 'doseresponse', label: 'Dose–response curve (EC50 / IC50)', family: 'X versus Y', assumes: 'A sigmoid response to dose. X is concentration; tick “X is already log” if it is.', minGroups: 1, maxGroups: Infinity, requiresXy: true },
+  { id: 'correlation', label: 'Pearson correlation', family: 'X versus Y', assumes: 'Paired X and Y measurements with a roughly linear relationship.', minGroups: 1, maxGroups: Infinity, shapes: ['xy'] },
+  { id: 'spearman', label: 'Spearman rank correlation', family: 'X versus Y', assumes: 'Paired X and Y. Monotone rather than linear association.', minGroups: 1, maxGroups: Infinity, shapes: ['xy'] },
+  { id: 'regression', label: 'Simple linear regression', family: 'X versus Y', assumes: 'Y depends linearly on X, with roughly constant scatter.', minGroups: 1, maxGroups: Infinity, shapes: ['xy'] },
+  { id: 'doseresponse', label: 'Dose–response curve (EC50 / IC50)', family: 'X versus Y', assumes: 'A sigmoid response to dose. X is concentration; tick “X is already log” if it is.', minGroups: 1, maxGroups: Infinity, shapes: ['xy'] },
 
-  { id: 'chisq', label: 'Chi-square test of counts', family: 'Categorical counts', assumes: 'Each cell is a count of independent observations, not a measurement.', minGroups: 2, maxGroups: Infinity, requiresXy: false },
-  { id: 'fisher', label: "Fisher's exact test (2 × 2)", family: 'Categorical counts', assumes: 'A 2 × 2 table of counts. Exact, so it is safe with small numbers.', minGroups: 2, maxGroups: 2, requiresXy: false },
+  { id: 'chisq', label: 'Chi-square test of counts', family: 'Categorical counts', assumes: 'Each cell is a count of independent observations, not a measurement.', minGroups: 2, maxGroups: Infinity, shapes: ['column'] },
+  { id: 'fisher', label: "Fisher's exact test (2 × 2)", family: 'Categorical counts', assumes: 'A 2 × 2 table of counts. Exact, so it is safe with small numbers.', minGroups: 2, maxGroups: 2, shapes: ['column'] },
 
-  { id: 'normality', label: 'Normality (Shapiro–Wilk)', family: 'Assumptions and screening', assumes: 'Checks each column against a normal distribution.', minGroups: 1, maxGroups: Infinity, requiresXy: false },
-  { id: 'variance', label: 'Equal variances (Levene, Bartlett)', family: 'Assumptions and screening', assumes: 'Checks whether the groups have comparable spread.', minGroups: 2, maxGroups: Infinity, requiresXy: false },
-  { id: 'outlier', label: "Outlier screening (Grubbs')", family: 'Assumptions and screening', assumes: 'Finds the single most extreme value in a roughly normal column.', minGroups: 1, maxGroups: Infinity, requiresXy: false },
+  { id: 'twoway', label: 'Two-way ANOVA', family: 'Two factors', assumes: 'Two crossed factors with the same number of observations in every combination. Repeat a row label for replicates.', minGroups: 2, maxGroups: Infinity, shapes: ['grouped'] },
+
+  { id: 'survival', label: 'Kaplan–Meier survival', family: 'Survival', assumes: 'One row per subject: a time, whether the event happened, and a group. Censored subjects are those still event-free at last follow-up.', minGroups: 1, maxGroups: Infinity, shapes: ['survival'] },
+
+  { id: 'normality', label: 'Normality (Shapiro–Wilk)', family: 'Assumptions and screening', assumes: 'Checks each column against a normal distribution.', minGroups: 1, maxGroups: Infinity, shapes: ['column'] },
+  { id: 'variance', label: 'Equal variances (Levene, Bartlett)', family: 'Assumptions and screening', assumes: 'Checks whether the groups have comparable spread.', minGroups: 2, maxGroups: Infinity, shapes: ['column'] },
+  { id: 'outlier', label: "Outlier screening (Grubbs')", family: 'Assumptions and screening', assumes: 'Finds the single most extreme value in a roughly normal column.', minGroups: 1, maxGroups: Infinity, shapes: ['column'] },
 ];
 
 export const METHOD_FAMILIES: MethodFamily[] = [
   'Describe', 'One sample', 'Two groups', 'Three or more groups',
-  'X versus Y', 'Categorical counts', 'Assumptions and screening',
+  'Two factors', 'X versus Y', 'Survival', 'Categorical counts',
+  'Assumptions and screening',
 ];
 
 export function methodInfo(method: Method): MethodInfo {
@@ -287,13 +374,13 @@ export function methodInfo(method: Method): MethodInfo {
  */
 export function availableMethods(table: DataTable): { info: MethodInfo; usable: boolean; why: string }[] {
   const groups = valueColumns(table).length;
-  const isXy = table.shape === 'xy';
   return METHODS.map((info) => {
-    if (info.requiresXy && !isXy) {
-      return { info, usable: false, why: 'Needs an XY table with an X column.' };
+    if (!info.shapes.includes(table.shape)) {
+      const wanted = info.shapes.map((shape) => SHAPE_INFO[shape].label.split(' —')[0]).join(' or ');
+      return { info, usable: false, why: `Needs a ${wanted} table. This one is ${SHAPE_INFO[table.shape].label.split(' —')[0]}.` };
     }
-    if (!info.requiresXy && isXy && info.id !== 'descriptive') {
-      return { info, usable: false, why: 'Group comparisons need a Column table.' };
+    if (table.shape === 'survival' || table.shape === 'grouped') {
+      return { info, usable: true, why: info.assumes };
     }
     if (groups < info.minGroups) {
       return { info, usable: false, why: `Needs at least ${info.minGroups} data column${info.minGroups === 1 ? '' : 's'}; this table has ${groups}.` };
@@ -513,6 +600,96 @@ export function runAnalysis(table: DataTable, analysis: Analysis): AnalysisResul
         raw: { columns: rows },
         tables: [{ title: "Grubbs' test per column", columns: ['Column', 'n', 'Most extreme', 'G', 'P value', 'Verdict'], rows }],
         warnings: ['Removing a value because a test flagged it changes the meaning of every p-value you compute afterwards. If you exclude it, say so in the paper and give the reason.'],
+      };
+    }
+
+    // --------------------------------------------------------- two factors
+    if (method === 'twoway') {
+      const rows = groupedRows(table);
+      if (rows.length < 4) {
+        return { ...base, error: 'Needs a row-factor label in the first column and numbers in the others.' };
+      }
+      const raw: any = stats.twoWayAnova(rows);
+      const rowFactor = labelColumn(table)?.name ?? 'Row factor';
+      return {
+        ...base,
+        raw,
+        pValue: raw.pInteraction,
+        summary: [
+          { label: rowFactor, value: formatP(raw.pA), note: `F(${raw.dfA}, ${raw.dfError}) = ${formatNumber(raw.fA, 3)}` },
+          { label: 'Columns', value: formatP(raw.pB), note: `F(${raw.dfB}, ${raw.dfError}) = ${formatNumber(raw.fB, 3)}` },
+          { label: 'Interaction', value: formatP(raw.pInteraction), note: `F(${raw.dfInteraction}, ${raw.dfError}) = ${formatNumber(raw.fInteraction, 3)}` },
+        ],
+        tables: [{
+          title: 'Analysis of variance',
+          columns: ['Source', 'Sum of squares', 'df', 'F', 'P value'],
+          rows: [
+            [rowFactor, formatNumber(raw.sumSquaresA), raw.dfA, formatNumber(raw.fA, 3), formatP(raw.pA)],
+            ['Columns', formatNumber(raw.sumSquaresB), raw.dfB, formatNumber(raw.fB, 3), formatP(raw.pB)],
+            ['Interaction', formatNumber(raw.sumSquaresInteraction), raw.dfInteraction, formatNumber(raw.fInteraction, 3), formatP(raw.pInteraction)],
+            ['Residual', formatNumber(raw.sumSquaresError), raw.dfError, '—', '—'],
+          ],
+        }],
+        warnings: raw.pInteraction < 0.05
+          ? ['The interaction is significant, so the two main effects are hard to interpret on their own: the effect of one factor depends on the level of the other.']
+          : [],
+      };
+    }
+
+    // ------------------------------------------------------------- survival
+    if (method === 'survival') {
+      const subjects = survivalRows(table);
+      if (subjects.length < 2) {
+        return { ...base, error: 'Needs at least two rows with a time and a 0/1 event indicator.' };
+      }
+      const groupNames = [...new Set(subjects.map((subject) => subject.group))];
+      const curves = groupNames.map((name) => {
+        const inGroup = subjects.filter((subject) => subject.group === name);
+        const estimate: any = stats.kaplanMeier(
+          inGroup.map((subject) => subject.time),
+          inGroup.map((subject) => subject.event)
+        );
+        return { name, ...estimate };
+      });
+
+      let logRank: any = null;
+      if (groupNames.length === 2) {
+        const [first, second] = groupNames.map((name) => subjects.filter((subject) => subject.group === name));
+        logRank = stats.logRankTest(
+          first.map((subject) => subject.time), first.map((subject) => subject.event),
+          second.map((subject) => subject.time), second.map((subject) => subject.event)
+        );
+      }
+
+      const summary: AnalysisResult['summary'] = curves.slice(0, 4).map((curve) => ({
+        label: curve.name,
+        value: Number.isFinite(curve.median) ? formatNumber(curve.median) : 'not reached',
+        note: `${curve.events} of ${curve.n} had the event`,
+      }));
+      if (logRank) {
+        summary.push({
+          label: 'Log-rank P',
+          value: formatP(logRank.pValue),
+          note: `χ² = ${formatNumber(logRank.statistic ?? logRank.chiSquare, 3)}, df = 1`,
+        });
+      }
+
+      return {
+        ...base,
+        raw: { curves, logRank },
+        pValue: logRank?.pValue ?? null,
+        summary,
+        tables: [{
+          title: 'Median survival',
+          columns: ['Group', 'n', 'Events', 'Censored', 'Median'],
+          rows: curves.map((curve) => [
+            curve.name, curve.n, curve.events, curve.censored,
+            Number.isFinite(curve.median) ? formatNumber(curve.median) : 'not reached',
+          ]),
+        }],
+        warnings: groupNames.length > 2
+          ? ['The log-rank test here compares exactly two groups. With more than two, compare them pairwise and correct for multiplicity.']
+          : [],
       };
     }
 
@@ -890,6 +1067,17 @@ export function methodsSentence(
       return `Counts were compared with Pearson's chi-square test${(result.raw as any).yatesApplied ? " with Yates' continuity correction" : ''} (${p}; ${engine}).`;
     case 'fisher':
       return `Counts were compared with Fisher's exact test (two-sided, ${p}; ${engine}).`;
+    case 'twoway': {
+      const raw = result.raw as any;
+      return `Data were analysed by two-way ANOVA. The row factor gave ${formatP(raw.pA).startsWith('<') ? `P ${formatP(raw.pA)}` : `P = ${formatP(raw.pA)}`}, the column factor ${formatP(raw.pB).startsWith('<') ? `P ${formatP(raw.pB)}` : `P = ${formatP(raw.pB)}`}, and their interaction ${formatP(raw.pInteraction).startsWith('<') ? `P ${formatP(raw.pInteraction)}` : `P = ${formatP(raw.pInteraction)}`} (${engine}).`;
+    }
+    case 'survival': {
+      const raw = result.raw as any;
+      const base = `Survival was estimated by the Kaplan–Meier method`;
+      return raw.logRank
+        ? `${base} and groups were compared with the log-rank (Mantel–Cox) test (${p}; ${engine}).`
+        : `${base} (${engine}).`;
+    }
     case 'normality':
       return `Normality was assessed with the Shapiro–Wilk test (${engine}).`;
     case 'variance':
@@ -910,8 +1098,10 @@ export function makeColumn(name: string, role: ColumnRole = 'group'): Column {
 }
 
 export function makeTable(name: string, shape: TableShape = 'column'): DataTable {
-  const columns = shape === 'xy'
-    ? [makeColumn('X', 'x'), makeColumn('Y1', 'y')]
+  const columns =
+    shape === 'xy' ? [makeColumn('X', 'x'), makeColumn('Y1', 'y')]
+    : shape === 'grouped' ? [makeColumn('Group', 'label'), makeColumn('Control'), makeColumn('Treated')]
+    : shape === 'survival' ? [makeColumn('Time', 'time'), makeColumn('Event', 'event'), makeColumn('Group', 'group')]
     : [makeColumn('Group A'), makeColumn('Group B')];
   const rows: Cell[][] = Array.from({ length: 8 }, () => columns.map(() => null));
   return { id: newId('tbl'), name, shape, columns, rows };

@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import { clearSnapshot, debounce, writeSnapshot } from './persist.ts';
 import {
   type Analysis,
+  type ColumnRole,
   type AnalysisResult,
   type Cell,
   type DataTable,
@@ -249,9 +250,10 @@ export const useStore = create<State>((set, get) => ({
       ...project,
       tables: project.tables.map((table) => {
         if (table.id !== tableId) return table;
-        const role = table.shape === 'xy' ? 'y' : 'group';
+        const role: ColumnRole = table.shape === 'xy' ? 'y' : 'group';
         const name = table.shape === 'xy'
           ? `Y${table.columns.filter((c) => c.role === 'y').length + 1}`
+          : table.shape === 'grouped' ? `Column ${table.columns.length}`
           : `Group ${String.fromCharCode(65 + table.columns.length)}`;
         return {
           ...table,
@@ -310,15 +312,25 @@ export const useStore = create<State>((set, get) => ({
         // Default column names track the shape, so an XY table does not keep
         // calling its X column "Group A". Names the user chose are left alone.
         const isDefaultName = (name: string) =>
-          /^(Group [A-Z]|X|Y\d*|Column \d+)$/.test(name);
+          /^(Group [A-Z]|Group|X|Y\d*|Time|Event|Control|Treated|Column \d+)$/.test(name);
+
+        const roleFor = (index: number): ColumnRole => {
+          if (shape === 'xy') return index === 0 ? 'x' : 'y';
+          if (shape === 'grouped') return index === 0 ? 'label' : 'group';
+          if (shape === 'survival') return index === 0 ? 'time' : index === 1 ? 'event' : 'group';
+          return 'group';
+        };
+        const defaultNameFor = (index: number): string => {
+          if (shape === 'xy') return index === 0 ? 'X' : `Y${index}`;
+          if (shape === 'grouped') return index === 0 ? 'Group' : `Column ${index}`;
+          if (shape === 'survival') return index === 0 ? 'Time' : index === 1 ? 'Event' : 'Group';
+          return `Group ${String.fromCharCode(65 + index)}`;
+        };
+
         const columns = table.columns.map((column, index) => {
-          const role = shape === 'xy' ? (index === 0 ? ('x' as const) : ('y' as const)) : ('group' as const);
+          const role = roleFor(index);
           if (!isDefaultName(column.name)) return { ...column, role };
-          const name =
-            shape === 'xy'
-              ? index === 0 ? 'X' : `Y${index}`
-              : `Group ${String.fromCharCode(65 + index)}`;
-          return { ...column, role, name };
+          return { ...column, role, name: defaultNameFor(index) };
         });
         return { ...table, shape, columns };
       }),
