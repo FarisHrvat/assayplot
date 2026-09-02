@@ -1,0 +1,21 @@
+{
+  "name": "statista",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first scientific data analysis and publication graphing",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "dev": "vite",
+    "build": "vite build",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build --bundles app",
+    "desktop:build:installers": "tauri build"
+  },
+  "license": "AGPL-3.0-or-later",
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "vite": "^7.3.6",
+    "xlsx": "^0.18.5"
+  }
+}

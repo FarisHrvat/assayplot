@@ -1,0 +1,2 @@
+import test from 'node:test';import assert from 'node:assert/strict';import{applyFigureTemplate}from'../src/core/templates.js';
+test('figure templates return independent style settings',()=>{const original={colors:['#000'],title:'Test'},styled=applyFigureTemplate(original,'journal');assert.equal(styled.template,'journal');assert.notEqual(styled.colors,original.colors);assert.equal(styled.title,'Test');assert.throws(()=>applyFigureTemplate(original,'missing'),/Unknown/)})
