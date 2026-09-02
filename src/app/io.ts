@@ -33,6 +33,7 @@ export function serializeProject(project: Project): Uint8Array {
         tables: project.tables.length,
         analyses: project.analyses.length,
         figures: project.figures.length,
+        layouts: project.layouts.length,
       },
     }),
     'README.txt': strToU8(
@@ -46,6 +47,7 @@ export function serializeProject(project: Project): Uint8Array {
   for (const table of project.tables) files[`tables/${table.id}.json`] = pretty(table);
   for (const analysis of project.analyses) files[`analyses/${analysis.id}.json`] = pretty(analysis);
   for (const figure of project.figures) files[`figures/${figure.id}.json`] = pretty(figure);
+  for (const layout of project.layouts) files[`layouts/${layout.id}.json`] = pretty(layout);
 
   return zipSync(files, { level: 6 });
 }
@@ -80,6 +82,7 @@ export function deserializeProject(bytes: Uint8Array): Project {
     tables: collect('tables/'),
     analyses: collect('analyses/'),
     figures: collect('figures/'),
+    layouts: collect('layouts/'),
   });
 }
 
@@ -127,6 +130,7 @@ export function migrate(raw: any): Project {
       tables: [table],
       analyses: [],
       figures: [],
+      layouts: [],
     };
   }
 
@@ -160,6 +164,15 @@ export function migrate(raw: any): Project {
       analysisId: figure.analysisId ?? null,
       plotType: figure.plotType ?? 'bar',
       style: defaultStyle(figure.style ?? {}),
+    })),
+    // Added in schema 5; older projects simply have none.
+    layouts: (raw.layouts ?? []).map((layout: any) => ({
+      id: layout.id ?? newId('lay'),
+      name: layout.name ?? 'Layout',
+      panels: Array.isArray(layout.panels) ? layout.panels : [],
+      columns: Math.max(1, Number(layout.columns) || 2),
+      labelStyle: ['A', 'a', '1', 'none'].includes(layout.labelStyle) ? layout.labelStyle : 'A',
+      gap: Number.isFinite(Number(layout.gap)) ? Number(layout.gap) : 18,
     })),
   };
 }
@@ -346,9 +359,10 @@ export function download(filename: string, data: BlobPart, mime: string): void {
 /** Serialises a live SVG node, inlining the font so the file stands alone. */
 export function svgSource(node: SVGSVGElement): string {
   const clone = node.cloneNode(true) as SVGSVGElement;
-  // An in-place edit renders an HTML <input> inside a foreignObject. Exporting
-  // mid-edit must not embed a form control in the figure.
+  // An in-place edit renders an HTML <input> inside a foreignObject, and unset
+  // labels render a grey placeholder. Neither belongs in an exported figure.
   clone.querySelectorAll('foreignObject').forEach((node) => node.remove());
+  clone.querySelectorAll('[data-placeholder]').forEach((node) => node.remove());
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   clone.setAttribute('font-family', 'Helvetica, Arial, sans-serif');
   const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect');

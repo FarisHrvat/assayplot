@@ -335,3 +335,70 @@ test('a new project starts empty but usable', async () => {
   assert.equal(project.figures.length, 0);
   assert.equal(useStore.getState().dirty, false, 'a fresh project is not dirty');
 });
+
+// ------------------------------------------------------------ layouts
+
+test('a layout survives a save and reopen, and keeps its panel order', async () => {
+  const { makeLayout, makeFigure } = await import('../src/app/model.ts');
+  const project = demoProject();
+  const second = makeFigure('Second', project.tables[0].id, 'box');
+  const layout = makeLayout('Figure 1', [project.figures[0].id, second.id]);
+  const withLayout = { ...project, figures: [...project.figures, second], layouts: [layout] };
+
+  const restored = deserializeProject(serializeProject(withLayout));
+  assert.equal(restored.layouts.length, 1);
+  assert.deepEqual(restored.layouts[0].panels, [project.figures[0].id, second.id]);
+  assert.equal(restored.layouts[0].columns, 2);
+  assert.equal(restored.layouts[0].labelStyle, 'A');
+});
+
+test('a project saved before layouts existed still opens', () => {
+  const older = { ...demoProject(), schemaVersion: 4 } as any;
+  delete older.layouts;
+  const migrated = migrate(older);
+  assert.deepEqual(migrated.layouts, []);
+  assert.equal(migrated.tables.length, 1);
+});
+
+test('panel labels follow the chosen style', async () => {
+  const { panelLabel } = await import('../src/app/model.ts');
+  assert.equal(panelLabel('A', 0), 'A');
+  assert.equal(panelLabel('A', 2), 'C');
+  assert.equal(panelLabel('a', 1), 'b');
+  assert.equal(panelLabel('1', 3), '4');
+  assert.equal(panelLabel('none', 0), '');
+});
+
+test('deleting a figure removes it from every layout that used it', async () => {
+  const { useStore } = await import('../src/app/store.ts');
+  const { makeLayout } = await import('../src/app/model.ts');
+  const project = demoProject();
+  const figureId = project.figures[0].id;
+  useStore.getState().replaceProject({ ...project, layouts: [makeLayout('L', [figureId])] });
+
+  useStore.getState().deleteNode('figure', figureId);
+
+  const after = useStore.getState().project;
+  assert.equal(after.figures.length, 0);
+  assert.deepEqual(after.layouts[0].panels, [], 'the layout must not keep a dangling panel');
+});
+
+test('moving a panel reorders it and stops at the ends', async () => {
+  const { useStore } = await import('../src/app/store.ts');
+  const { makeLayout, makeFigure } = await import('../src/app/model.ts');
+  const project = demoProject();
+  const b = makeFigure('B', project.tables[0].id);
+  const c = makeFigure('C', project.tables[0].id);
+  const layout = makeLayout('L', [project.figures[0].id, b.id, c.id]);
+  useStore.getState().replaceProject({ ...project, figures: [...project.figures, b, c], layouts: [layout] });
+
+  useStore.getState().movePanel(layout.id, 2, -1);
+  assert.deepEqual(useStore.getState().project.layouts[0].panels, [project.figures[0].id, c.id, b.id]);
+
+  useStore.getState().movePanel(layout.id, 0, -1);
+  assert.deepEqual(
+    useStore.getState().project.layouts[0].panels,
+    [project.figures[0].id, c.id, b.id],
+    'moving the first panel up is a no-op, not a crash'
+  );
+});

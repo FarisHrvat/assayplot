@@ -511,12 +511,15 @@ export function Plot(props: PlotProps) {
  * path strips foreignObject so a mid-edit export never carries a form control.
  */
 function EditableText({
-  value, placeholder, x, y, anchor, fontSize, fontWeight, fill, transform,
+  value, placeholder, fallback, x, y, anchor, fontSize, fontWeight, fill, transform,
   kind, selected, editing, onSelect, onEditText, onFinishEdit, boxWidth,
 }: any) {
   const isSelected = selected?.kind === kind;
   const isEditing = editing?.kind === kind;
-  const shown = value || placeholder;
+  // A fallback (the X column's own name, say) is real content and is exported;
+  // a placeholder is only a hint about where to click.
+  const effective = value || fallback || '';
+  const shown = effective || placeholder;
 
   if (isEditing) {
     return (
@@ -550,15 +553,22 @@ function EditableText({
   const boxLeft = anchor === 'middle' ? x - boxWidth / 2 : x - 4;
   const boxSpan = anchor === 'middle' ? boxWidth : Math.max(44, shown.length * fontSize * 0.62) + 8;
 
+  // A placeholder is an editing affordance, not part of the figure. It is drawn
+  // only where the figure can actually be clicked, and is tagged so the export
+  // path can strip it: nobody wants "X axis label" in a submitted figure.
+  const isPlaceholder = !effective;
+  if (isPlaceholder && !onSelect) return null;
+
   return (
-    <g transform={transform} style={{ cursor: 'text' }}
-      onClick={(event) => { event.stopPropagation(); onSelect?.({ kind }); }}>
+    <g transform={transform} style={{ cursor: onSelect ? 'text' : 'default' }}
+      onClick={(event) => { if (!onSelect) return; event.stopPropagation(); onSelect({ kind }); }}>
       {isSelected && (
         <rect x={boxLeft} y={y - fontSize - 3} width={boxSpan} height={fontSize + 9}
           fill="#0C625914" stroke="#0C6259" strokeWidth={1} strokeDasharray="3 2" rx={3} />
       )}
       <text x={x} y={y} textAnchor={anchor} fontSize={fontSize} fontWeight={fontWeight}
-        fill={value ? fill : '#A6B2AF'}>
+        fill={isPlaceholder ? '#A6B2AF' : fill}
+        data-placeholder={isPlaceholder ? 'true' : undefined}>
         {shown}
       </text>
     </g>
@@ -582,7 +592,8 @@ function XLabelText(props: any) {
   const { figure, x, y, fallbackLabel, selected, editing, onSelect, onEditText, onFinishEdit } = props;
   return (
     <EditableText
-      kind="xLabel" value={figure.style.xLabel} placeholder={fallbackLabel || 'X axis label'}
+      kind="xLabel" value={figure.style.xLabel} placeholder="X axis label"
+      fallback={fallbackLabel}
       x={x} y={y} anchor="middle"
       fontSize={figure.style.fontSize} fontWeight={400} fill="#555" boxWidth={220}
       selected={selected} editing={editing}
@@ -907,6 +918,85 @@ function DistributionPlot(props: any) {
 
       {legend}
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// multi-panel layout
+// ---------------------------------------------------------------------------
+
+export interface LayoutPanel {
+  figure: Figure;
+  table: DataTable;
+  result: AnalysisResult | null;
+}
+
+/**
+ * Composes several figures into one publication panel.
+ *
+ * Each panel is a nested <svg> with its own viewport, so every figure keeps its
+ * own coordinate system and nothing has to be re-laid-out. The composite
+ * serialises and rasterises through exactly the same path as a single figure.
+ */
+export function LayoutFigure({
+  panels, columns, gap, labelStyle, labelFor,
+}: {
+  panels: LayoutPanel[];
+  columns: number;
+  gap: number;
+  labelStyle: string;
+  labelFor: (index: number) => string;
+}) {
+  if (!panels.length) {
+    return <EmptyPlot width={520} height={200} message="Add figures to this layout from the panel on the right" />;
+  }
+
+  const perRow = Math.max(1, columns);
+  const rows = Math.ceil(panels.length / perRow);
+  const labelRoom = labelStyle === 'none' ? 0 : 20;
+
+  // Column widths and row heights follow the largest panel in each, so panels
+  // stay aligned to a grid rather than overlapping.
+  const columnWidths: number[] = [];
+  const rowHeights: number[] = [];
+  panels.forEach((panel, index) => {
+    const column = index % perRow;
+    const row = Math.floor(index / perRow);
+    columnWidths[column] = Math.max(columnWidths[column] ?? 0, panel.figure.style.width);
+    rowHeights[row] = Math.max(rowHeights[row] ?? 0, panel.figure.style.height + labelRoom);
+  });
+
+  const totalWidth = columnWidths.reduce((sum, width) => sum + width, 0) + gap * (perRow - 1);
+  const totalHeight = rowHeights.reduce((sum, height) => sum + height, 0) + gap * (rows - 1);
+
+  const offsetX = (column: number) =>
+    columnWidths.slice(0, column).reduce((sum, width) => sum + width + gap, 0);
+  const offsetY = (row: number) =>
+    rowHeights.slice(0, row).reduce((sum, height) => sum + height + gap, 0);
+
+  return (
+    <svg viewBox={`0 0 ${totalWidth} ${totalHeight}`} width={totalWidth} height={totalHeight}
+      role="img" aria-label="Multi-panel figure" style={{ fontFamily: 'inherit' }}>
+      <rect x={0} y={0} width={totalWidth} height={totalHeight} fill="#ffffff" />
+      {panels.map((panel, index) => {
+        const column = index % perRow;
+        const row = Math.floor(index / perRow);
+        const x = offsetX(column);
+        const y = offsetY(row);
+        const label = labelFor(index);
+        return (
+          <g key={`${panel.figure.id}-${index}`} transform={`translate(${x} ${y})`}>
+            {label && (
+              <text x={0} y={14} fontSize={17} fontWeight={700} fill="#111">{label}</text>
+            )}
+            <svg x={0} y={labelRoom} width={panel.figure.style.width} height={panel.figure.style.height}
+              viewBox={`0 0 ${panel.figure.style.width} ${panel.figure.style.height}`}>
+              <Plot table={panel.table} figure={panel.figure} result={panel.result} />
+            </svg>
+          </g>
+        );
+      })}
+    </svg>
   );
 }
 

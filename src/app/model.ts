@@ -155,6 +155,20 @@ export interface Figure {
   style: FigureStyle;
 }
 
+/** How panels are lettered in a multi-panel figure. */
+export type PanelLabelStyle = 'A' | 'a' | '1' | 'none';
+
+export interface Layout {
+  id: string;
+  name: string;
+  /** Figure ids, in reading order. A missing figure is skipped on render. */
+  panels: string[];
+  columns: number;
+  labelStyle: PanelLabelStyle;
+  /** Gap between panels, in the same units as figure width. */
+  gap: number;
+}
+
 export interface Project {
   schemaVersion: number;
   appVersion: string;
@@ -162,9 +176,10 @@ export interface Project {
   tables: DataTable[];
   analyses: Analysis[];
   figures: Figure[];
+  layouts: Layout[];
 }
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 export const APP_VERSION = '0.3.0';
 
 // ---------------------------------------------------------------------------
@@ -1146,6 +1161,18 @@ export function makeFigure(name: string, tableId: string, plotType: PlotType = '
   };
 }
 
+export function makeLayout(name: string, panels: string[] = []): Layout {
+  return { id: newId('lay'), name, panels, columns: 2, labelStyle: 'A', gap: 18 };
+}
+
+/** The letter or number shown on a panel, e.g. A, b, or 3. */
+export function panelLabel(style: PanelLabelStyle, index: number): string {
+  if (style === 'none') return '';
+  if (style === '1') return String(index + 1);
+  const letter = String.fromCharCode(65 + (index % 26));
+  return style === 'a' ? letter.toLowerCase() : letter;
+}
+
 export function makeAnalysis(name: string, tableId: string, method: Method = 'descriptive'): Analysis {
   return { id: newId('ana'), name, tableId, method, options: { correction: 'tukey' } };
 }
@@ -1192,6 +1219,7 @@ export function demoProject(): Project {
     tables: [table],
     analyses: [analysis],
     figures: [figure],
+    layouts: [],
   };
 }
 
@@ -1205,6 +1233,7 @@ export function emptyProject(name = 'Untitled project'): Project {
     tables: [table],
     analyses: [],
     figures: [],
+    layouts: [],
   };
 }
 

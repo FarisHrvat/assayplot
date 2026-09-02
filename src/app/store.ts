@@ -18,11 +18,14 @@ import {
   type Method,
   type PlotType,
   type FigureStyle,
+  type Layout,
+  type PanelLabelStyle,
   type TableShape,
   demoProject,
   makeAnalysis,
   makeColumn,
   makeFigure,
+  makeLayout,
   makeTable,
   runAnalysis,
 } from './model.ts';
@@ -30,7 +33,8 @@ import {
 export type Selection =
   | { kind: 'table'; id: string }
   | { kind: 'analysis'; id: string }
-  | { kind: 'figure'; id: string };
+  | { kind: 'figure'; id: string }
+  | { kind: 'layout'; id: string };
 
 interface State {
   project: Project;
@@ -71,6 +75,12 @@ interface State {
   updateFigure: (id: string, patch: Partial<Figure>) => void;
   updateStyle: (id: string, patch: Partial<FigureStyle>) => void;
   setPlotType: (id: string, plotType: PlotType) => void;
+
+  addLayout: () => void;
+  updateLayout: (id: string, patch: Partial<Layout>) => void;
+  addPanel: (layoutId: string, figureId: string) => void;
+  removePanel: (layoutId: string, index: number) => void;
+  movePanel: (layoutId: string, index: number, by: number) => void;
 }
 
 const UNDO_LIMIT = 100;
@@ -160,13 +170,19 @@ export const useStore = create<State>((set, get) => ({
       // Deleting a table takes its dependent analyses and figures with it.
       const analyses = project.analyses.filter((a) => a.tableId !== id);
       const analysisIds = new Set(analyses.map((a) => a.id));
+      const figures = project.figures
+        .filter((f) => f.tableId !== id)
+        .map((f) => (f.analysisId && !analysisIds.has(f.analysisId) ? { ...f, analysisId: null } : f));
+      const figureIds = new Set(figures.map((f) => f.id));
       next = {
         ...project,
         tables: project.tables.filter((t) => t.id !== id),
         analyses,
-        figures: project.figures
-          .filter((f) => f.tableId !== id)
-          .map((f) => (f.analysisId && !analysisIds.has(f.analysisId) ? { ...f, analysisId: null } : f)),
+        figures,
+        layouts: project.layouts.map((layout) => ({
+          ...layout,
+          panels: layout.panels.filter((panel) => figureIds.has(panel)),
+        })),
       };
     } else if (kind === 'analysis') {
       next = {
@@ -174,8 +190,17 @@ export const useStore = create<State>((set, get) => ({
         analyses: project.analyses.filter((a) => a.id !== id),
         figures: project.figures.map((f) => (f.analysisId === id ? { ...f, analysisId: null } : f)),
       };
+    } else if (kind === 'figure') {
+      next = {
+        ...project,
+        figures: project.figures.filter((f) => f.id !== id),
+        layouts: project.layouts.map((layout) => ({
+          ...layout,
+          panels: layout.panels.filter((panel) => panel !== id),
+        })),
+      };
     } else {
-      next = { ...project, figures: project.figures.filter((f) => f.id !== id) };
+      next = { ...project, layouts: project.layouts.filter((l) => l.id !== id) };
     }
     get().commit(next);
     const first = next.tables[0];
@@ -385,6 +410,58 @@ export const useStore = create<State>((set, get) => ({
   setPlotType: (id, plotType) => {
     const project = get().project;
     get().commit({ ...project, figures: replaceById(project.figures, id, { plotType }) });
+  },
+
+  addLayout: () => {
+    const project = get().project;
+    // Seed a new layout with the figures that exist, which is almost always
+    // what someone assembling a figure panel wants.
+    const layout = makeLayout(`Figure ${project.layouts.length + 1}`,
+      project.figures.slice(0, 4).map((figure) => figure.id));
+    get().commit({ ...project, layouts: [...project.layouts, layout] });
+    set({ selection: { kind: 'layout', id: layout.id } });
+  },
+
+  updateLayout: (id, patch) => {
+    const project = get().project;
+    get().commit({ ...project, layouts: replaceById(project.layouts, id, patch) });
+  },
+
+  addPanel: (layoutId, figureId) => {
+    const project = get().project;
+    get().commit({
+      ...project,
+      layouts: project.layouts.map((layout) =>
+        layout.id === layoutId ? { ...layout, panels: [...layout.panels, figureId] } : layout
+      ),
+    });
+  },
+
+  removePanel: (layoutId, index) => {
+    const project = get().project;
+    get().commit({
+      ...project,
+      layouts: project.layouts.map((layout) =>
+        layout.id === layoutId
+          ? { ...layout, panels: layout.panels.filter((_, position) => position !== index) }
+          : layout
+      ),
+    });
+  },
+
+  movePanel: (layoutId, index, by) => {
+    const project = get().project;
+    get().commit({
+      ...project,
+      layouts: project.layouts.map((layout) => {
+        if (layout.id !== layoutId) return layout;
+        const target = index + by;
+        if (target < 0 || target >= layout.panels.length) return layout;
+        const panels = [...layout.panels];
+        [panels[index], panels[target]] = [panels[target], panels[index]];
+        return { ...layout, panels };
+      }),
+    });
   },
 }));
 

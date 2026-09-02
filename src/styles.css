@@ -489,3 +489,27 @@ input:focus-visible, select:focus-visible, button:focus-visible {
   background: var(--sunk); border-radius: var(--radius);
   font: 0.74rem/1.5 var(--mono); color: var(--ink-soft);
 }
+
+/* ------------------------------------------------------- layout panel list */
+.layout-canvas { max-height: 70vh; }
+.panel-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.panel-list li { display: flex; align-items: center; gap: 0.4rem; }
+.panel-badge {
+  width: 18px; height: 18px; flex: none;
+  display: grid; place-items: center; border-radius: 3px;
+  background: var(--accent-soft); color: var(--accent-ink);
+  font: 600 0.68rem/1 var(--mono);
+}
+.panel-name {
+  flex: 1; min-width: 0; text-align: left;
+  border: none; background: none; padding: 2px 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.82rem;
+}
+.panel-controls { display: flex; gap: 1px; flex: none; }
+.panel-controls button {
+  border: none; background: none; color: var(--ink-faint);
+  padding: 1px 4px; font-size: 0.8rem;
+}
+.panel-controls button:hover:not(:disabled) { color: var(--accent); }
+.panel-controls button:last-child:hover { color: var(--flag); }

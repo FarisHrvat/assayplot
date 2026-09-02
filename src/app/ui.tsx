@@ -10,6 +10,7 @@ import {
   SHAPE_INFO,
   METHOD_FAMILIES,
   availableMethods,
+  panelLabel,
   columnValues,
   emptyProject,
   formatP,
@@ -20,7 +21,10 @@ import {
 } from './model.ts';
 import { analysisById, markSaved, resultFor, startAutosave, tableById, useStore, type Selection } from './store.ts';
 import { clearSnapshot, readSnapshot, type Snapshot } from './persist.ts';
-import { Plot, PALETTES, PLOT_GROUPS, paletteFor, plotsForShape, type Selected } from './plot.tsx';
+import {
+  LayoutFigure, Plot, PALETTES, PLOT_GROUPS,
+  paletteFor, plotsForShape, type LayoutPanel, type Selected,
+} from './plot.tsx';
 import {
   IMPORT_EXTENSIONS,
   deserializeProject,
@@ -167,6 +171,7 @@ export function App() {
           {selection.kind === 'table' && <TableView key={selection.id} id={selection.id} />}
           {selection.kind === 'analysis' && <AnalysisView key={selection.id} id={selection.id} />}
           {selection.kind === 'figure' && <FigureView key={selection.id} id={selection.id} />}
+          {selection.kind === 'layout' && <LayoutView key={selection.id} id={selection.id} />}
         </main>
       </div>
       {toast && <div className="toast" role="status">{toast}</div>}
@@ -288,6 +293,7 @@ function Navigator() {
   const addTable = useStore((s) => s.addTable);
   const addAnalysis = useStore((s) => s.addAnalysis);
   const addFigure = useStore((s) => s.addFigure);
+  const addLayout = useStore((s) => s.addLayout);
   const deleteNode = useStore((s) => s.deleteNode);
   const notify = useStore((s) => s.notify);
 
@@ -354,6 +360,16 @@ function Navigator() {
         {!project.figures.length && <p className="nav-hint">Figures redraw when the data changes.</p>}
         {project.figures.map((figure) => (
           <Item key={figure.id} kind="figure" id={figure.id} name={figure.name} badge={figure.plotType} />
+        ))}
+      </Section>
+
+      <Section title="Layouts" action={
+        <button onClick={addLayout} disabled={!project.figures.length} title="New multi-panel figure">＋</button>
+      }>
+        {!project.layouts.length && <p className="nav-hint">Assemble figures into one panel.</p>}
+        {project.layouts.map((layout) => (
+          <Item key={layout.id} kind="layout" id={layout.id} name={layout.name}
+            badge={`${layout.panels.length} panel${layout.panels.length === 1 ? '' : 's'}`} />
         ))}
       </Section>
 
@@ -1116,6 +1132,143 @@ function FigureView({ id }: { id: string }) {
                 : figure.style.errorBars === 'range' ? 'the full range'
                 : 'the 95% confidence interval'}. State this in your caption.
             </p>
+          )}
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// multi-panel layout
+// ===========================================================================
+
+function LayoutView({ id }: { id: string }) {
+  const project = useStore((s) => s.project);
+  const layout = project.layouts.find((entry) => entry.id === id);
+  const updateLayout = useStore((s) => s.updateLayout);
+  const addPanel = useStore((s) => s.addPanel);
+  const removePanel = useStore((s) => s.removePanel);
+  const movePanel = useStore((s) => s.movePanel);
+  const renameNode = useStore((s) => s.renameNode);
+  const notify = useStore((s) => s.notify);
+  const select = useStore((s) => s.select);
+  const svgRef = useRef<HTMLDivElement>(null);
+
+  if (!layout) return <NothingSelected />;
+
+  const panels: LayoutPanel[] = layout.panels
+    .map((figureId) => project.figures.find((figure) => figure.id === figureId))
+    .filter((figure): figure is NonNullable<typeof figure> => Boolean(figure))
+    .map((figure) => {
+      const table = tableById(project, figure.tableId);
+      const analysis = analysisById(project, figure.analysisId);
+      return {
+        figure,
+        table: table!,
+        result: table && analysis ? resultFor(table, analysis) : null,
+      };
+    })
+    .filter((panel) => Boolean(panel.table));
+
+  const exportSvg = () => {
+    const node = svgRef.current?.querySelector('svg');
+    if (!node) return;
+    download(`${layout.name}.svg`, svgSource(node as SVGSVGElement), 'image/svg+xml');
+    notify('Layout exported as SVG.');
+  };
+
+  const exportPng = async (dpi: number) => {
+    const node = svgRef.current?.querySelector('svg');
+    if (!node) return;
+    try {
+      const blob = await svgToPng(node as SVGSVGElement, dpi);
+      download(`${layout.name}-${dpi}dpi.png`, blob, 'image/png');
+      notify(`Layout exported at ${dpi} DPI.`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Export failed.');
+    }
+  };
+
+  const unused = project.figures.filter((figure) => !layout.panels.includes(figure.id));
+
+  return (
+    <div className="view">
+      <ViewHead eyebrow={`Layout · ${panels.length} panel${panels.length === 1 ? '' : 's'}`} title={layout.name}
+        onRename={(name) => renameNode('layout', layout.id, name)}>
+        <button onClick={exportSvg}>Export SVG</button>
+        <button onClick={() => exportPng(300)}>PNG 300 dpi</button>
+        <button onClick={() => exportPng(600)}>PNG 600 dpi</button>
+      </ViewHead>
+
+      <div className="figure-layout">
+        <div>
+          <div className="canvas layout-canvas" ref={svgRef}>
+            <LayoutFigure panels={panels} columns={layout.columns} gap={layout.gap}
+              labelStyle={layout.labelStyle}
+              labelFor={(index) => panelLabel(layout.labelStyle, index)} />
+          </div>
+          <p className="trace muted">
+            Panels use each figure as it stands. Edit a figure to change its panel.
+          </p>
+        </div>
+
+        <aside className="properties">
+          <div className="prop-group">
+            <h3>Arrangement</h3>
+            <Field label="Panels per row">
+              <input type="number" min={1} max={6} value={layout.columns}
+                onChange={(event) => updateLayout(layout.id, { columns: Math.max(1, Number(event.target.value) || 1) })} />
+            </Field>
+            <Field label="Panel labels">
+              <select value={layout.labelStyle}
+                onChange={(event) => updateLayout(layout.id, { labelStyle: event.target.value as any })}>
+                <option value="A">A, B, C</option>
+                <option value="a">a, b, c</option>
+                <option value="1">1, 2, 3</option>
+                <option value="none">None</option>
+              </select>
+            </Field>
+            <Field label="Gap between panels">
+              <input type="number" min={0} max={80} value={layout.gap}
+                onChange={(event) => updateLayout(layout.id, { gap: Math.max(0, Number(event.target.value) || 0) })} />
+            </Field>
+          </div>
+
+          <div className="prop-group">
+            <h3>Panels</h3>
+            {!panels.length && <p className="nav-hint">No panels yet.</p>}
+            <ol className="panel-list">
+              {layout.panels.map((figureId, index) => {
+                const figure = project.figures.find((entry) => entry.id === figureId);
+                return (
+                  <li key={`${figureId}-${index}`}>
+                    <span className="panel-badge">{panelLabel(layout.labelStyle, index) || index + 1}</span>
+                    <button className="panel-name" onClick={() => figure && select({ kind: 'figure', id: figure.id })}>
+                      {figure?.name ?? 'missing figure'}
+                    </button>
+                    <span className="panel-controls">
+                      <button onClick={() => movePanel(layout.id, index, -1)} disabled={index === 0} title="Move up">↑</button>
+                      <button onClick={() => movePanel(layout.id, index, 1)} disabled={index === layout.panels.length - 1} title="Move down">↓</button>
+                      <button onClick={() => removePanel(layout.id, index)} title="Remove from layout">×</button>
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+
+          {unused.length > 0 && (
+            <div className="prop-group">
+              <h3>Add a figure</h3>
+              <div className="chips">
+                {unused.map((figure) => (
+                  <button key={figure.id} className="chip" onClick={() => addPanel(layout.id, figure.id)}>
+                    ＋ {figure.name}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
         </aside>
       </div>
