@@ -6,7 +6,6 @@
 // one.
 
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
-import * as XLSX from 'xlsx';
 import {
   type Cell,
   type DataTable,
@@ -252,7 +251,10 @@ export function tableFromDelimited(text: string, name: string): DataTable {
  * Reads the first worksheet of an Excel workbook into a table. Handles .xlsx,
  * .xls, and .ods, since the parser covers all three.
  */
-export function tableFromWorkbook(bytes: ArrayBuffer, name: string): DataTable {
+export async function tableFromWorkbook(bytes: ArrayBuffer, name: string): Promise<DataTable> {
+  // Loaded on demand: the spreadsheet parser is by far the largest dependency,
+  // and most sessions never open a workbook.
+  const XLSX = await import('xlsx');
   const book = XLSX.read(bytes, { type: 'array' });
   const sheetName = book.SheetNames[0];
   if (!sheetName) throw new Error('That workbook has no worksheets.');

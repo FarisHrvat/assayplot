@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Types, tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Dependency licences
+        run: npm run licenses
+      - name: Type check
+        run: npm run typecheck
+      - name: Tests, including the committed R parity fixtures
+        run: npm test
+      - name: Production build
+        run: npm run build
+
+  oracle:
+    name: Regenerate the R fixtures and check for drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+      - name: Install jsonlite
+        run: Rscript -e 'install.packages("jsonlite", repos = "https://cloud.r-project.org")'
+      - run: npm ci
+      - name: Regenerate fixtures from R
+        run: Rscript validation/generate/reference.R
+      - name: Fail if the committed fixtures no longer match R
+        run: |
+          if ! git diff --quiet validation/fixtures/; then
+            echo "::error::The committed fixtures differ from what R produces now."
+            echo "Either R changed, or the fixtures were edited by hand."
+            git diff --stat validation/fixtures/
+            exit 1
+          fi
+          echo "Committed fixtures still match R."
+      - name: Run the suite against the freshly generated fixtures
+        run: npm test
+
+  desktop:
+    name: Desktop build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Linux build dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf build-essential curl wget file libssl-dev \
+            libgtk-3-dev libayatana-appindicator3-dev
+      - run: npm ci
+      - name: Build installers
+        run: npm run desktop:build:installers
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assayplot-${{ matrix.os }}
+          path: |
+            src-tauri/target/release/bundle/**/*.dmg
+            src-tauri/target/release/bundle/**/*.AppImage
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*.exe
+          if-no-files-found: warn

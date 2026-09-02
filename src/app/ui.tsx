@@ -16,7 +16,8 @@ import {
   significanceStars,
   valueColumns,
 } from './model.ts';
-import { analysisById, resultFor, tableById, useStore, type Selection } from './store.ts';
+import { analysisById, markSaved, resultFor, startAutosave, tableById, useStore, type Selection } from './store.ts';
+import { clearSnapshot, readSnapshot, type Snapshot } from './persist.ts';
 import { Plot, PALETTES, PLOT_GROUPS, paletteFor, plotsForShape, type Selected } from './plot.tsx';
 import {
   IMPORT_EXTENSIONS,
@@ -31,6 +32,60 @@ import {
 } from './io.ts';
 
 // ===========================================================================
+// error boundary
+// ===========================================================================
+
+interface BoundaryState { error: Error | null }
+
+/**
+ * A rendering fault must never cost someone their data. The boundary keeps the
+ * autosaved snapshot intact and offers to download the project as it stands, so
+ * a bug in one figure cannot take an afternoon's work with it.
+ */
+export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, BoundaryState> {
+  state: BoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): BoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    // Kept local: there is no telemetry in this application.
+    console.error('AssayPlot render error', error, info.componentStack);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="crash">
+        <h1>Something in the interface broke</h1>
+        <p>
+          Your data is safe. It was autosaved a moment ago and is still in memory.
+          Download it now, then reload.
+        </p>
+        <div className="crash-actions">
+          <button className="primary" onClick={() => {
+            try {
+              const project = useStore.getState().project;
+              const bytes = new Uint8Array(serializeProject(project)).slice().buffer;
+              const safe = project.name.replace(/[^\w\-. ]+/g, '_').trim() || 'recovered';
+              download(`${safe}-recovered.assayplot`, bytes, 'application/zip');
+            } catch {
+              alert('The project could not be packaged. Reload and use the autosaved copy.');
+            }
+          }}>Download my project</button>
+          <button onClick={() => window.location.reload()}>Reload AssayPlot</button>
+        </div>
+        <details>
+          <summary>Technical detail</summary>
+          <pre>{this.state.error.stack ?? String(this.state.error)}</pre>
+        </details>
+      </div>
+    );
+  }
+}
+
+// ===========================================================================
 // app
 // ===========================================================================
 
@@ -42,6 +97,26 @@ export function App() {
   const redo = useStore((s) => s.redo);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
+  const [recovery, setRecovery] = useState<Snapshot | null>(null);
+
+  // Offer any work left behind by a crash or a closed tab, once, at startup.
+  useEffect(() => {
+    let cancelled = false;
+    readSnapshot().then((snapshot) => {
+      if (!cancelled && snapshot?.dirty) setRecovery(snapshot);
+    });
+    const stop = startAutosave();
+    return () => { cancelled = true; stop(); };
+  }, []);
+
+  // Warn before a close that would lose unsaved work.
+  const dirty = useStore((s) => s.dirty);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
 
   useEffect(() => {
     if (!toast) return;
@@ -66,6 +141,23 @@ export function App() {
 
   return (
     <div className="app">
+      {recovery && (
+        <div className="recovery" role="alert">
+          <span>
+            <strong>Unsaved work from your last session.</strong>{' '}
+            “{recovery.project.name}”, autosaved {new Date(recovery.savedAt).toLocaleString()}.
+          </span>
+          <span className="recovery-actions">
+            <button className="primary" onClick={() => {
+              useStore.getState().replaceProject(recovery.project);
+              useStore.setState({ dirty: true });
+              setRecovery(null);
+              notify('Recovered your last session.');
+            }}>Restore it</button>
+            <button onClick={() => { void clearSnapshot(); setRecovery(null); }}>Discard</button>
+          </span>
+        </div>
+      )}
       <Toolbar canUndo={canUndo} canRedo={canRedo} />
       <div className="body">
         <Navigator />
@@ -103,7 +195,7 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
     const bytes = new Uint8Array(serializeProject(project)).slice().buffer;
     const safe = project.name.replace(/[^\w\-. ]+/g, '_').trim() || 'project';
     download(`${safe}.assayplot`, bytes, 'application/zip');
-    useStore.setState({ dirty: false });
+    markSaved();
     notify('Project saved.');
   };
 
@@ -287,6 +379,13 @@ function Section({ title, action, children }: { title: string; action: React.Rea
 // data table
 // ===========================================================================
 
+/** Height of one grid row in pixels. Must match `.grid td` in styles.css. */
+const ROW_HEIGHT = 27;
+/** Rows rendered beyond the viewport, so scrolling does not flash blank. */
+const OVERSCAN = 12;
+/** Below this many rows, windowing costs more than it saves. */
+const VIRTUALISE_ABOVE = 200;
+
 function TableView({ id }: { id: string }) {
   const project = useStore((s) => s.project);
   const table = tableById(project, id);
@@ -303,6 +402,19 @@ function TableView({ id }: { id: string }) {
   const addFigure = useStore((s) => s.addFigure);
   const notify = useStore((s) => s.notify);
   const [focus, setFocus] = useState<{ row: number; column: number } | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(600);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+    const measure = () => setViewportHeight(node.clientHeight || 600);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   if (!table) return <NothingSelected />;
 
@@ -317,6 +429,21 @@ function TableView({ id }: { id: string }) {
     setCells(table.id, row, column, block);
     notify(`Pasted ${block.length} × ${block[0]?.length ?? 0} cells.`);
   };
+
+  // Only the rows on screen are rendered; the rest are represented by two
+  // spacer rows, so a 100k-row import scrolls as smoothly as a 10-row one.
+  const virtualise = table.rows.length > VIRTUALISE_ABOVE;
+  const firstVisible = virtualise
+    ? Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
+    : 0;
+  const lastVisible = virtualise
+    ? Math.min(table.rows.length, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN)
+    : table.rows.length;
+  const visibleRows = table.rows
+    .slice(firstVisible, lastVisible)
+    .map((row, offset) => ({ row, rowIndex: firstVisible + offset }));
+  const padBefore = firstVisible * ROW_HEIGHT;
+  const padAfter = Math.max(0, (table.rows.length - lastVisible) * ROW_HEIGHT);
 
   return (
     <div className="view">
@@ -336,7 +463,10 @@ function TableView({ id }: { id: string }) {
         the {analyses} analysis{analyses === 1 ? '' : 'es'} and {figures} figure{figures === 1 ? '' : 's'} built on this table.
       </p>
 
-      <div className="grid-wrap">
+      <div className="grid-wrap" ref={scrollRef}
+        onScroll={(event) => {
+          if (virtualise) setScrollTop((event.target as HTMLDivElement).scrollTop);
+        }}>
         <table className="grid">
           <thead>
             <tr>
@@ -358,7 +488,8 @@ function TableView({ id }: { id: string }) {
             </tr>
           </thead>
           <tbody>
-            {table.rows.map((row, rowIndex) => (
+            {padBefore > 0 && <tr style={{ height: padBefore }} aria-hidden="true"><td colSpan={table.columns.length + 2} /></tr>}
+            {visibleRows.map(({ row, rowIndex }) => (
               <tr key={rowIndex}>
                 <th className="row-head">
                   <span>{rowIndex + 1}</span>
@@ -394,6 +525,7 @@ function TableView({ id }: { id: string }) {
                 <td />
               </tr>
             ))}
+            {padAfter > 0 && <tr style={{ height: padAfter }} aria-hidden="true"><td colSpan={table.columns.length + 2} /></tr>}
           </tbody>
         </table>
       </div>
@@ -403,6 +535,7 @@ function TableView({ id }: { id: string }) {
         <span className="counts">
           {table.rows.length} rows · {table.columns.length} columns ·{' '}
           {valueColumns(table).reduce((sum, column) => sum + columnValues(table, column.id).length, 0)} numeric values
+          {virtualise && ` · showing ${firstVisible + 1}–${lastVisible}`}
         </span>
       </div>
 

@@ -6,6 +6,7 @@
 // cell edit invalidates exactly the nodes that depend on it and nothing else.
 
 import { create } from 'zustand';
+import { clearSnapshot, debounce, writeSnapshot } from './persist.ts';
 import {
   type Analysis,
   type AnalysisResult,
@@ -405,4 +406,51 @@ export function tableById(project: Project, id: string): DataTable | undefined {
 
 export function analysisById(project: Project, id: string | null): Analysis | undefined {
   return id ? project.analyses.find((analysis) => analysis.id === id) : undefined;
+}
+
+
+// ---------------------------------------------------------------------------
+// autosave
+// ---------------------------------------------------------------------------
+
+/**
+ * Writes a recovery snapshot shortly after the project stops changing. Purely a
+ * safety net against a crash or a closed tab; the user's real save is still an
+ * explicit file, and saving clears the snapshot.
+ */
+const persist = debounce((project: Project, dirty: boolean) => {
+  void writeSnapshot(project, dirty);
+}, 800);
+
+let autosaveStarted = false;
+
+export function startAutosave(): () => void {
+  if (autosaveStarted || typeof window === 'undefined') return () => {};
+  autosaveStarted = true;
+
+  let previous = useStore.getState().project;
+  const unsubscribe = useStore.subscribe((state) => {
+    if (state.project === previous) return;
+    previous = state.project;
+    if (state.dirty) persist(state.project, true);
+    else void clearSnapshot();
+  });
+
+  // A closing tab does not wait for a debounce.
+  const flush = () => persist.flush();
+  window.addEventListener('beforeunload', flush);
+  window.addEventListener('pagehide', flush);
+
+  return () => {
+    unsubscribe();
+    window.removeEventListener('beforeunload', flush);
+    window.removeEventListener('pagehide', flush);
+    autosaveStarted = false;
+  };
+}
+
+/** Called after an explicit save: there is nothing left to recover. */
+export function markSaved(): void {
+  useStore.setState({ dirty: false });
+  void clearSnapshot();
 }

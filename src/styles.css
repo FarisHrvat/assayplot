@@ -251,7 +251,7 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 .row-head button { border: none; background: none; color: var(--ink-faint); padding: 1px 3px; font-size: 0.8rem; }
 .row-head button:hover { color: var(--flag); background: none; }
 
-.grid td { padding: 0; }
+.grid td { padding: 0; height: 27px; }
 .grid td { min-width: 118px; }
 .grid td input {
   width: 100%; border: none; background: none; border-radius: 0;
@@ -462,3 +462,30 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 
 .trace b { color: var(--accent-ink); }
 .trace .muted { color: var(--ink-faint); }
+
+/* ---------------------------------------------------- recovery and crashes */
+.recovery {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
+  padding: 0.55rem 0.9rem;
+  background: var(--warn-soft); color: var(--warn-ink);
+  border-bottom: 1px solid #E3D3AE;
+  font-size: 0.86rem;
+}
+.recovery strong { color: inherit; }
+.recovery-actions { display: flex; gap: 0.4rem; }
+
+.crash {
+  max-width: 46rem; margin: 4rem auto; padding: 0 1.5rem;
+  color: var(--ink);
+}
+.crash h1 { font-size: 1.5rem; margin: 0 0 0.6rem; }
+.crash p { color: var(--ink-soft); max-width: 60ch; }
+.crash-actions { display: flex; gap: 0.5rem; margin: 1.2rem 0 2rem; }
+.crash details { border-top: 1px solid var(--rule); padding-top: 1rem; }
+.crash summary { cursor: pointer; color: var(--ink-faint); font-size: 0.85rem; }
+.crash pre {
+  margin-top: 0.7rem; padding: 0.8rem; overflow: auto; max-height: 20rem;
+  background: var(--sunk); border-radius: var(--radius);
+  font: 0.74rem/1.5 var(--mono); color: var(--ink-soft);
+}

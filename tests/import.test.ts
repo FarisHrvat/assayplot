@@ -23,8 +23,8 @@ function arrayBufferFor(name: string): ArrayBuffer {
 }
 
 for (const name of ['knockdown.xlsx', 'knockdown.xls']) {
-  test(`imports ${name}`, () => {
-    const table = tableFromWorkbook(arrayBufferFor(name), 'knockdown');
+  test(`imports ${name}`, async () => {
+    const table = await tableFromWorkbook(arrayBufferFor(name), 'knockdown');
     assert.deepEqual(table.columns.map((column) => column.name), EXPECTED_COLUMNS);
     assert.equal(table.rows.length, 6);
     assert.deepEqual(table.rows[0], EXPECTED_FIRST_ROW);
@@ -41,8 +41,8 @@ for (const name of ['knockdown.csv', 'knockdown.txt']) {
   });
 }
 
-test('every format yields the same numbers', () => {
-  const workbook = tableFromWorkbook(arrayBufferFor('knockdown.xlsx'), 'x');
+test('every format yields the same numbers', async () => {
+  const workbook = await tableFromWorkbook(arrayBufferFor('knockdown.xlsx'), 'x');
   const csv = tableFromDelimited(readFileSync(new URL('knockdown.csv', FIXTURES), 'utf8'), 'c');
   assert.deepEqual(
     columnValues(workbook, workbook.columns[1].id),

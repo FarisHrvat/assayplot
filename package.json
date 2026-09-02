@@ -3,14 +3,17 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Local-first scientific data analysis and publication graphing",
+  "description": "Open-source statistics and publication figures for the lab",
   "scripts": {
-    "test": "node --test tests/*.test.js tests/*.test.ts",
-    "dev": "vite",
     "build": "vite build",
-    "desktop:dev": "tauri dev",
     "desktop:build": "tauri build --bundles app",
-    "desktop:build:installers": "tauri build"
+    "desktop:build:installers": "tauri build",
+    "desktop:dev": "tauri dev",
+    "dev": "vite",
+    "fixtures": "Rscript validation/generate/reference.R",
+    "licenses": "node scripts/licenses.mjs",
+    "test": "node --test tests/*.test.js tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "license": "AGPL-3.0-or-later",
   "devDependencies": {
@@ -19,14 +22,18 @@
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^5.2.0",
     "typescript": "^7.0.2",
-    "vite": "^7.3.6",
-    "xlsx": "^0.18.5"
+    "vite": "^7.3.6"
   },
   "dependencies": {
     "fflate": "^0.8.3",
     "immer": "^11.1.18",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "xlsx": "^0.18.5",
     "zustand": "^5.0.15"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/assayplot/assayplot"
   }
 }
