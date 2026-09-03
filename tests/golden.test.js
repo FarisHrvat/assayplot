@@ -71,6 +71,18 @@ const RUNNERS = {
     stats.friedmanTest(matrix[0].map((_, index) => matrix.map((row) => row[index]))),
 
   shapiroWilk: ({ x }) => diagnostics.shapiroWilk(x),
+  leveneTest: ({ groups }) => diagnostics.leveneTest(groups),
+  grubbsTest: ({ x }) => diagnostics.grubbsTest(x),
+  fitFourParameterLogistic: ({ x, y }) => stats.fitFourParameterLogistic(x, y),
+
+  // Flattened so the fixture can compare the whole comparison table at once.
+  dunnTest: ({ groups }) => {
+    const result = posthoc.dunnTest(groups);
+    return {
+      z: result.comparisons.map((entry) => entry.z),
+      pValues: result.comparisons.map((entry) => entry.pValue),
+    };
+  },
   bartlettTest: ({ groups }) => diagnostics.bartlettTest(groups),
   oneSampleTTest: ({ x, mu }) => diagnostics.oneSampleTTest(x, mu),
 
@@ -98,6 +110,9 @@ const RUNNERS = {
 // Values below NEGLIGIBLE are past the resolution of either implementation.
 const FIELD_TOLERANCE = {
   oddsRatioConditional: 1e-3,
+  // The 4PL fit is a coordinate search against R's Levenberg-Marquardt; both
+  // land on the same optimum but stop at slightly different points on it.
+  ec50: 1e-5, hillSlope: 1e-5, bottom: 1e-5, top: 1e-5,
   pValues: 1e-4,
   lower: 1e-7,
   upper: 1e-7,

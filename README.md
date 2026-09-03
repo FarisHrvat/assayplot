@@ -99,7 +99,7 @@ installed. A second CI job regenerates them with R and fails if they have
 drifted.
 
 ```bash
-npm test        # 127 tests, 32 of them R parity cases
+npm test        # 164 tests, 36 of them R parity cases
 npm run typecheck
 npm run licenses
 ```

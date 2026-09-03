@@ -1,6 +1,6 @@
 {
   "generatedBy": "R 4.4.2",
-  "generatedAt": "2026-09-02T18:56:58+0200",
+  "generatedAt": "2026-09-03T09:12:24+0200",
   "note": "Golden values produced by R. Regenerate with validation/generate/reference.R.",
   "cases": [
     {
@@ -569,6 +569,68 @@
         "median": 5
       },
       "note": "product-limit estimate"
+    },
+    {
+      "id": "levene",
+      "procedure": "leveneTest",
+      "input": {
+        "groups": [
+          [1, 2, 3, 4, 9],
+          [2, 4, 6, 8, 3],
+          [1, 5, 9, 13, 7]
+        ]
+      },
+      "expected": {
+        "statistic": 0.577181208053691,
+        "dfBetween": 2,
+        "dfWithin": 12,
+        "pValue": 0.57632659201348
+      },
+      "note": "Brown-Forsythe variant, centred on the median"
+    },
+    {
+      "id": "dunn",
+      "procedure": "dunnTest",
+      "input": {
+        "groups": [
+          [2.1, 3.4, 1.9, 4.5],
+          [5.2, 6.1, 4.8, 5.9],
+          [8.3, 7.7, 9.1, 8.8]
+        ]
+      },
+      "expected": {
+        "z": [-1.56892908110547, -3.13785816221094, -1.56892908110547],
+        "pValues": [0.116664464781023, 0.00170187209267292, 0.116664464781023]
+      },
+      "note": "pooled ranks with tie correction, pairs in order 1-2, 1-3, 2-3"
+    },
+    {
+      "id": "fourpl",
+      "procedure": "fitFourParameterLogistic",
+      "input": {
+        "x": [0.5, 1.5, 5, 15, 50, 150, 500, 1500, 5000],
+        "y": [5.59565117243621, 6.96551932384084, 11.9908178311695, 24.9587536877484, 52.5, 78.1527306920127, 93.0091821688305, 97.7985550305653, 99.4043488275638]
+      },
+      "expected": {
+        "bottom": 5.00000000003029,
+        "top": 99.999999999985,
+        "ec50": 50.0000000000398,
+        "hillSlope": 1.09999999999896
+      },
+      "note": "nonlinear least squares on a clean sigmoid, EC50 = 50"
+    },
+    {
+      "id": "grubbs",
+      "procedure": "grubbsTest",
+      "input": {
+        "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 50]
+      },
+      "expected": {
+        "statistic": 2.80032724325617,
+        "pValue": 0.0115015869081971,
+        "value": 50
+      },
+      "note": "single most extreme value"
     }
   ]
 }

@@ -102,18 +102,24 @@ this class of bug.
 
 ## Coverage
 
-32 golden cases across: Welch, Student, paired and one-sample *t*-tests;
-Mann–Whitney and Wilcoxon in both exact and approximate branches; one-way and
-two-way ANOVA; Kruskal–Wallis; Friedman; Tukey HSD; Pearson, Spearman and linear
-regression; chi-square with and without Yates; Fisher's exact; Shapiro–Wilk;
-Bartlett; Kaplan–Meier; the log-rank test; and the Holm and Benjamini–Hochberg
-corrections.
+**Every statistical procedure AssayPlot ships has a golden fixture.** 36 cases:
 
-Procedures **not** yet covered by a fixture, because no trusted reference was
-available in R without adding a dependency: Dunn's test, Levene's test, Grubbs'
-test, and the four-parameter logistic fit. These are covered by unit tests
-against published worked examples and by round-trip tests that recover known
-parameters from synthetic data — weaker evidence, and stated as such.
+| Area | Procedures |
+|---|---|
+| *t*-tests | Welch, Student, paired, one-sample |
+| Rank tests | Mann–Whitney and Wilcoxon, in both the exact and approximate branches; Kruskal–Wallis; Friedman |
+| ANOVA | One-way, two-way with replication |
+| Post-hoc | Tukey HSD (p-values and family-wise intervals), Dunn's test |
+| Correlation and fitting | Pearson, Spearman, linear regression, four-parameter logistic |
+| Counts | Chi-square with and without Yates, Fisher's exact |
+| Assumptions | Shapiro–Wilk, Levene (Brown–Forsythe), Bartlett, Grubbs |
+| Survival | Kaplan–Meier, log-rank |
+| Multiplicity | Holm, Benjamini–Hochberg |
+
+Levene, Dunn, Grubbs, and the 4PL fit are computed in the fixture script from
+their published formulae in base R rather than by importing `car`, `dunn.test`
+and `drc` — the same arithmetic those packages implement, and CI stays free of
+extra R dependencies.
 
 ## What validation does not mean
 

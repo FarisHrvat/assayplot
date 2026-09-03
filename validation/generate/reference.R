@@ -196,6 +196,76 @@ if (requireNamespace("survival", quietly = TRUE)) {
   cat("note: R package 'survival' not installed, skipping survival fixtures\n")
 }
 
+# ---- Levene, Dunn, and the 4PL fit ------------------------------------
+# Computed from their definitions in base R rather than pulling in car,
+# dunn.test and drc, so CI needs no extra packages. Each is the published
+# formula, which is the same thing those packages implement.
+
+lev_groups <- list(c(1,2,3,4,9), c(2,4,6,8,3), c(1,5,9,13,7))
+# Levene centred on the median (the Brown-Forsythe variant): a one-way ANOVA
+# on the absolute deviations from each group's median.
+lev_dev <- unlist(lapply(lev_groups, function(g) abs(g - median(g))))
+lev_f <- factor(rep(seq_along(lev_groups), lengths(lev_groups)))
+lev <- summary(aov(lev_dev ~ lev_f))[[1]]
+add("levene", "leveneTest", list(groups = lev_groups),
+    list(statistic = lev[["F value"]][1], dfBetween = lev[["Df"]][1],
+         dfWithin = lev[["Df"]][2], pValue = lev[["Pr(>F)"]][1]),
+    "Brown-Forsythe variant, centred on the median")
+
+# Dunn's test: z from the difference in mean ranks over the pooled-rank
+# standard error, with the tie correction.
+dunn_groups <- list(c(2.1,3.4,1.9,4.5), c(5.2,6.1,4.8,5.9), c(8.3,7.7,9.1,8.8))
+dunn_all <- unlist(dunn_groups)
+dunn_g <- rep(seq_along(dunn_groups), lengths(dunn_groups))
+dunn_r <- rank(dunn_all)
+dunn_n <- length(dunn_all)
+dunn_ties <- table(dunn_all)
+dunn_tie_term <- sum(dunn_ties^3 - dunn_ties)
+dunn_sigma_base <- (dunn_n * (dunn_n + 1)) / 12 - dunn_tie_term / (12 * (dunn_n - 1))
+dunn_mean_ranks <- sapply(seq_along(dunn_groups), function(i) mean(dunn_r[dunn_g == i]))
+dunn_sizes <- lengths(dunn_groups)
+dunn_z <- c(); dunn_p <- c()
+for (i in 1:(length(dunn_groups) - 1)) {
+  for (j in (i + 1):length(dunn_groups)) {
+    se <- sqrt(dunn_sigma_base * (1 / dunn_sizes[i] + 1 / dunn_sizes[j]))
+    z <- (dunn_mean_ranks[i] - dunn_mean_ranks[j]) / se
+    dunn_z <- c(dunn_z, z)
+    dunn_p <- c(dunn_p, 2 * (1 - pnorm(abs(z))))
+  }
+}
+add("dunn", "dunnTest", list(groups = dunn_groups),
+    list(z = dunn_z, pValues = dunn_p),
+    "pooled ranks with tie correction, pairs in order 1-2, 1-3, 2-3")
+
+# Four-parameter logistic by nonlinear least squares. Same model AssayPlot
+# fits: Bottom at low dose, Top at high dose.
+fpl_dose <- c(0.5, 1.5, 5, 15, 50, 150, 500, 1500, 5000)
+fpl_resp <- 5 + 95 / (1 + (50 / fpl_dose)^1.1)
+# Started from the data, as any fitter would, and on the log of EC50 so the
+# search is well scaled across several decades of concentration.
+fpl <- nls(fpl_resp ~ bottom + (top - bottom) / (1 + (10^logec50 / fpl_dose)^hill),
+           start = list(bottom = min(fpl_resp), top = max(fpl_resp),
+                        logec50 = log10(median(fpl_dose)), hill = 1),
+           # scaleOffset handles the zero-residual case: this curve is exact, and
+           # nls's relative-offset convergence test cannot otherwise be satisfied.
+           control = nls.control(tol = 1e-10, maxiter = 500, scaleOffset = 1))
+fpl_c <- coef(fpl)
+add("fourpl", "fitFourParameterLogistic",
+    list(x = fpl_dose, y = fpl_resp),
+    list(bottom = unname(fpl_c["bottom"]), top = unname(fpl_c["top"]),
+         ec50 = 10^unname(fpl_c["logec50"]), hillSlope = unname(fpl_c["hill"])),
+    "nonlinear least squares on a clean sigmoid, EC50 = 50")
+
+# Grubbs' test for one outlier, from the published formula.
+gr_x <- c(1, 2, 3, 4, 5, 6, 7, 8, 9, 50)
+gr_n <- length(gr_x)
+gr_g <- max(abs(gr_x - mean(gr_x))) / sd(gr_x)
+gr_t2 <- (gr_g^2 * (gr_n - 2)) / ((gr_n - 1)^2 - gr_n * gr_g^2)
+gr_p <- min(1, 2 * gr_n * pt(sqrt(gr_t2), gr_n - 2, lower.tail = FALSE))
+add("grubbs", "grubbsTest", list(x = gr_x),
+    list(statistic = gr_g, pValue = gr_p, value = gr_x[which.max(abs(gr_x - mean(gr_x)))]),
+    "single most extreme value")
+
 out <- list(
   generatedBy = paste("R", getRversion()),
   generatedAt = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
