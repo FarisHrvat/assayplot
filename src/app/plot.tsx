@@ -286,9 +286,12 @@ export function Plot(props: PlotProps) {
     const yLow = style.yMin ?? (plotType === 'area' ? Math.min(0, Math.min(...yValues)) : Math.min(...yValues) - pad);
     const yHigh = style.yMax ?? Math.max(...yValues) + pad;
 
-    const xScale = makeScale(xLow, xHigh, plotLeft, plotRight);
+    // A dose-response curve is unreadable on a linear X axis: everything
+    // interesting happens in the first decade.
+    const useLogX = style.logX && xLow > 0 && xHigh > 0;
+    const xScale = makeScale(xLow, xHigh, plotLeft, plotRight, useLogX);
     const yScale = makeScale(yLow, yHigh, plotBottom, plotTop, style.logY);
-    const xTicks = niceTicks(xLow, xHigh);
+    const xTicks = useLogX ? logTicks(xLow, xHigh) : niceTicks(xLow, xHigh);
     const yTicks = style.logY ? logTicks(yLow, yHigh) : niceTicks(yLow, yHigh);
 
     const sizeSeries = series.length > 1 ? series[1].y : [];

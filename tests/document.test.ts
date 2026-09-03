@@ -402,3 +402,83 @@ test('moving a panel reorders it and stops at the ends', async () => {
     'moving the first panel up is a no-op, not a crash'
   );
 });
+
+// ------------------------------------------------------- dose response
+
+/** Builds an XY table of a clean four-parameter curve with a known EC50. */
+function doseResponseTable(direction: 'up' | 'down'): DataTable {
+  const doses = [0.5, 1.5, 5, 15, 50, 150, 500, 1500, 5000];
+  const response = (dose: number) =>
+    direction === 'up'
+      ? 5 + 95 / (1 + Math.pow(50 / dose, 1.1))
+      : 5 + 95 / (1 + Math.pow(dose / 50, 1.1));
+  return {
+    id: 'dr', name: 'Dose response', shape: 'xy',
+    columns: [makeColumn('Concentration', 'x'), makeColumn('Response', 'y')],
+    rows: doses.map((dose) => [dose, response(dose)]),
+  };
+}
+
+const doseAnalysis = (options = {}): Analysis => ({
+  id: 'a', name: 'fit', tableId: 'dr', method: 'doseresponse', options,
+});
+
+test('a dose-response fit recovers the EC50 it was generated from', () => {
+  const result = runAnalysis(doseResponseTable('up'), doseAnalysis());
+  assert.equal(result.error, null);
+  assert.ok(Math.abs((result.raw.ec50 as number) - 50) < 1e-4, `EC50 was ${result.raw.ec50}`);
+  assert.ok(Math.abs((result.raw.hillSlope as number) - 1.1) < 1e-4);
+  assert.ok((result.raw.r2 as number) > 0.9999);
+});
+
+test('Bottom is the response at low dose and Top at high dose, for both directions', () => {
+  // The universal convention (Prism, drc): Bottom is the low-dose asymptote.
+  // An inverted parameterisation still fits the data perfectly, so only an
+  // assertion on the labels catches it.
+  const rising = runAnalysis(doseResponseTable('up'), doseAnalysis());
+  assert.ok(Math.abs((rising.raw.bottom as number) - 5) < 1e-3, `rising Bottom was ${rising.raw.bottom}`);
+  assert.ok(Math.abs((rising.raw.top as number) - 100) < 1e-3, `rising Top was ${rising.raw.top}`);
+
+  const falling = runAnalysis(doseResponseTable('down'), doseAnalysis());
+  assert.ok(Math.abs((falling.raw.bottom as number) - 100) < 1e-3, `falling Bottom was ${falling.raw.bottom}`);
+  assert.ok(Math.abs((falling.raw.top as number) - 5) < 1e-3, `falling Top was ${falling.raw.top}`);
+});
+
+test('a fitted curve is returned in the same X units as the table', () => {
+  const linear = runAnalysis(doseResponseTable('up'), doseAnalysis());
+  assert.ok(linear.fittedCurve && linear.fittedCurve.length > 100);
+  assert.ok(Math.abs(linear.fittedCurve![0].x - 0.5) < 1e-9, 'curve starts at the lowest concentration');
+  assert.ok(Math.abs(linear.fittedCurve!.at(-1)!.x - 5000) < 1e-6, 'and ends at the highest');
+});
+
+test('a table already holding log concentrations fits the same curve', () => {
+  const linear = runAnalysis(doseResponseTable('up'), doseAnalysis());
+
+  const logged = doseResponseTable('up');
+  logged.rows = logged.rows.map(([dose, y]) => [Math.log10(Number(dose)), y]);
+  const result = runAnalysis(logged, doseAnalysis({ logX: true }));
+
+  assert.equal(result.error, null);
+  assert.ok(
+    Math.abs((result.raw.ec50 as number) - (linear.raw.ec50 as number)) < 1e-6,
+    'the EC50 is a concentration either way'
+  );
+  // The overlay has to be plotted in the table's own units.
+  assert.ok(Math.abs(result.fittedCurve![0].x - Math.log10(0.5)) < 1e-9);
+});
+
+test('a zero-dose control is refused with an explanation, not a crash', () => {
+  const table = doseResponseTable('up');
+  table.rows = [[0, 5], [0, 6], [0, 4]];
+  const result = runAnalysis(table, doseAnalysis());
+  assert.match(result.error ?? '', /above zero/);
+});
+
+test('zero-dose rows are dropped and counted rather than failing the whole fit', () => {
+  const table = doseResponseTable('up');
+  table.rows = [[0, 5], ...table.rows];
+  const result = runAnalysis(table, doseAnalysis());
+  assert.equal(result.error, null);
+  assert.ok(result.warnings.some((warning) => /left out of the fit/.test(warning)));
+  assert.ok(Math.abs((result.raw.ec50 as number) - 50) < 1e-4);
+});

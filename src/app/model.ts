@@ -136,6 +136,7 @@ export interface FigureStyle {
   xMin: number | null;
   xMax: number | null;
   logY: boolean;
+  logX: boolean;
   width: number;
   height: number;
   pointSize: number;
@@ -784,39 +785,65 @@ export function runAnalysis(table: DataTable, analysis: Analysis): AnalysisResul
       }
 
       if (method === 'doseresponse') {
+        // The fitter works in linear concentration units. If the user's X
+        // column already holds log10(concentration), it is un-logged for the
+        // fit and the fitted curve is put back into log units for the plot,
+        // so the overlay lines up with the points either way.
         const logX = analysis.options.logX ?? false;
-        const dose = logX ? x : x.map((value) => (value > 0 ? Math.log10(value) : NaN));
-        const usable = dose
-          .map((value, index) => ({ value, y: y[index] }))
-          .filter((entry) => Number.isFinite(entry.value));
-        if (usable.length < 4) {
-          return { ...base, error: 'A four-parameter fit needs at least four points at positive concentrations.' };
+        const pairs = x
+          .map((value, index) => ({
+            concentration: logX ? Math.pow(10, value) : value,
+            plotX: value,
+            y: y[index],
+          }))
+          .filter((pair) => Number.isFinite(pair.concentration) && pair.concentration > 0);
+
+        if (pairs.length < 4) {
+          return {
+            ...base,
+            error: logX
+              ? 'A four-parameter fit needs at least four points.'
+              : 'A four-parameter fit needs at least four points at concentrations above zero. A zero-dose control cannot be placed on a log axis — either drop it or use a very small nominal concentration.',
+          };
         }
+
         const raw: any = stats.fitFourParameterLogistic(
-          usable.map((entry) => entry.value),
-          usable.map((entry) => entry.y)
+          pairs.map((pair) => pair.concentration),
+          pairs.map((pair) => pair.y)
         );
-        const low = Math.min(...usable.map((entry) => entry.value));
-        const high = Math.max(...usable.map((entry) => entry.value));
-        const curve = Array.from({ length: 120 }, (_, i) => {
-          const at = low + ((high - low) * i) / 119;
-          const value = raw.bottom + (raw.top - raw.bottom) / (1 + Math.pow(10, (raw.logEC50 - at) * raw.hillSlope));
-          return { x: logX ? at : Math.pow(10, at), y: value };
+
+        // Sampled geometrically, because a dose-response curve is read on a
+        // log axis and even spacing would leave the low end unresolved.
+        const low = Math.min(...pairs.map((pair) => pair.concentration));
+        const high = Math.max(...pairs.map((pair) => pair.concentration));
+        const fittedCurve = Array.from({ length: 160 }, (_, i) => {
+          const concentration = low * Math.pow(high / low, i / 159);
+          return {
+            x: logX ? Math.log10(concentration) : concentration,
+            y: raw.model(concentration),
+          };
         });
+
+        const dropped = x.length - pairs.length;
         return {
           ...base,
-          raw,
-          fittedCurve: curve,
+          raw: {
+            method: raw.method, n: raw.n,
+            ec50: raw.ec50, hillSlope: raw.hillSlope,
+            top: raw.top, bottom: raw.bottom,
+            r2: raw.r2, rmse: raw.rmse,
+          },
+          fittedCurve,
           summary: [
-            { label: 'EC50 / IC50', value: formatNumber(Math.pow(10, raw.logEC50)), note: 'in the units of X' },
-            { label: 'log EC50', value: formatNumber(raw.logEC50) },
+            { label: 'EC50 / IC50', value: formatNumber(raw.ec50), note: 'concentration giving a half-maximal response' },
             { label: 'Hill slope', value: formatNumber(raw.hillSlope) },
-            { label: 'Top / Bottom', value: `${formatNumber(raw.top)} / ${formatNumber(raw.bottom)}` },
-            { label: 'R²', value: formatNumber(raw.r2) },
+            { label: 'Top', value: formatNumber(raw.top) },
+            { label: 'Bottom', value: formatNumber(raw.bottom) },
+            { label: 'R²', value: formatNumber(raw.r2), note: `n = ${raw.n}` },
           ],
           warnings: [
-            'This fit reports no confidence intervals on its parameters yet, and does not compare alternative models. Treat the EC50 as a point estimate.',
-            ...(logX ? [] : ['X was log10-transformed for the fit; values at or below zero were dropped.']),
+            'This fit reports no confidence interval on the EC50 and does not compare alternative models. Treat it as a point estimate.',
+            ...(dropped > 0 ? [`${dropped} point(s) at zero or negative concentration were left out of the fit.`] : []),
           ],
         };
       }
@@ -1077,7 +1104,7 @@ export function methodsSentence(
     case 'regression':
       return `${names[0]} was regressed on X by ordinary least squares (${p}; ${engine}).`;
     case 'doseresponse':
-      return `Dose–response data were fitted with a four-parameter logistic model by least squares, giving EC50 = ${formatNumber(Math.pow(10, (result.raw as any).logEC50))} and a Hill slope of ${formatNumber((result.raw as any).hillSlope)} (${engine}).`;
+      return `Dose–response data were fitted with a four-parameter logistic model by least squares, giving EC50 = ${formatNumber((result.raw as any).ec50)} and a Hill slope of ${formatNumber((result.raw as any).hillSlope)} (${engine}).`;
     case 'chisq':
       return `Counts were compared with Pearson's chi-square test${(result.raw as any).yatesApplied ? " with Yates' continuity correction" : ''} (${p}; ${engine}).`;
     case 'fisher':
@@ -1140,6 +1167,7 @@ export function defaultStyle(overrides: Partial<FigureStyle> = {}): FigureStyle 
     xMin: null,
     xMax: null,
     logY: false,
+    logX: false,
     width: 520,
     height: 380,
     pointSize: 4,

@@ -10,7 +10,9 @@
     "desktop:build:installers": "tauri build",
     "desktop:dev": "tauri dev",
     "dev": "vite",
+    "examples": "node scripts/make-examples.mjs",
     "fixtures": "Rscript validation/generate/reference.R",
+    "icon": "node scripts/make-icon.mjs",
     "licenses": "node scripts/licenses.mjs",
     "test": "node --test tests/*.test.js tests/*.test.ts",
     "typecheck": "tsc --noEmit"

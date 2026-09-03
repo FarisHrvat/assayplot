@@ -1150,6 +1150,11 @@ function FigureView({ id }: { id: string }) {
               Log scale on Y
             </label>
             <label className="check">
+              <input type="checkbox" checked={figure.style.logX}
+                onChange={(event) => updateStyle(figure.id, { logX: event.target.checked })} />
+              Log scale on X
+            </label>
+            <label className="check">
               <input type="checkbox" checked={figure.style.frame}
                 onChange={(event) => updateStyle(figure.id, { frame: event.target.checked })} />
               Box the plot area
