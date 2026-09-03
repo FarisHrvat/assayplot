@@ -498,3 +498,43 @@ test('zero-dose rows are dropped and counted rather than failing the whole fit',
   assert.ok(result.warnings.some((warning) => /left out of the fit/.test(warning)));
   assert.ok(Math.abs((result.raw.ec50 as number) - 50) < 1e-4);
 });
+
+test('a copied figure can be pasted into a layout', async () => {
+  const { useStore } = await import('../src/app/store.ts');
+  const { makeLayout, makeFigure } = await import('../src/app/model.ts');
+  const project = demoProject();
+  const second = makeFigure('Second', project.tables[0].id, 'box');
+  const layout = makeLayout('Panel', []);
+  useStore.getState().replaceProject({ ...project, figures: [...project.figures, second], layouts: [layout] });
+
+  useStore.getState().copyFigures([project.figures[0].id, second.id]);
+  const added = useStore.getState().pasteIntoLayout(layout.id);
+
+  assert.equal(added, 2);
+  assert.deepEqual(useStore.getState().project.layouts[0].panels, [project.figures[0].id, second.id]);
+});
+
+test('pasting a figure that has since been deleted adds nothing', async () => {
+  const { useStore } = await import('../src/app/store.ts');
+  const { makeLayout } = await import('../src/app/model.ts');
+  const project = demoProject();
+  const layout = makeLayout('Panel', []);
+  useStore.getState().replaceProject({ ...project, layouts: [layout] });
+
+  useStore.getState().copyFigures(['fig_that_never_existed']);
+  assert.equal(useStore.getState().pasteIntoLayout(layout.id), 0);
+  assert.deepEqual(useStore.getState().project.layouts[0].panels, []);
+});
+
+test('the same figure may appear twice in a layout', async () => {
+  const { useStore } = await import('../src/app/store.ts');
+  const { makeLayout } = await import('../src/app/model.ts');
+  const project = demoProject();
+  const layout = makeLayout('Panel', []);
+  useStore.getState().replaceProject({ ...project, layouts: [layout] });
+
+  useStore.getState().copyFigures([project.figures[0].id]);
+  useStore.getState().pasteIntoLayout(layout.id);
+  useStore.getState().pasteIntoLayout(layout.id);
+  assert.equal(useStore.getState().project.layouts[0].panels.length, 2);
+});

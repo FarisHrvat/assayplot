@@ -56,6 +56,8 @@ interface State {
   past: Project[];
   future: Project[];
   dirty: boolean;
+  /** Figure ids on the internal clipboard, for pasting into a layout. */
+  clipboard: string[];
   /** Transient confirmation, for things that worked. */
   toast: string | null;
   /** Something that did not work. Stays until dismissed. */
@@ -97,6 +99,8 @@ interface State {
   addLayout: () => void;
   updateLayout: (id: string, patch: Partial<Layout>) => void;
   addPanel: (layoutId: string, figureId: string) => void;
+  copyFigures: (figureIds: string[]) => void;
+  pasteIntoLayout: (layoutId: string) => number;
   removePanel: (layoutId: string, index: number) => void;
   movePanel: (layoutId: string, index: number, by: number) => void;
 }
@@ -117,6 +121,7 @@ export const useStore = create<State>((set, get) => ({
   past: [],
   future: [],
   dirty: false,
+  clipboard: [],
   toast: null,
   problem: null,
 
@@ -446,6 +451,23 @@ export const useStore = create<State>((set, get) => ({
   updateLayout: (id, patch) => {
     const project = get().project;
     get().commit({ ...project, layouts: replaceById(project.layouts, id, patch) });
+  },
+
+  copyFigures: (figureIds) => set({ clipboard: figureIds }),
+
+  /** Appends whatever was copied; returns how many panels were added. */
+  pasteIntoLayout: (layoutId) => {
+    const { project, clipboard } = get();
+    const existing = new Set(project.figures.map((figure) => figure.id));
+    const usable = clipboard.filter((id) => existing.has(id));
+    if (!usable.length) return 0;
+    get().commit({
+      ...project,
+      layouts: project.layouts.map((layout) =>
+        layout.id === layoutId ? { ...layout, panels: [...layout.panels, ...usable] } : layout
+      ),
+    });
+    return usable.length;
   },
 
   addPanel: (layoutId, figureId) => {

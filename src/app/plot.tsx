@@ -12,6 +12,7 @@ import React from 'react';
 import * as stats from '../core/stats.js';
 // @ts-ignore
 import { normalQuantile } from '../core/diagnostics.js';
+import { getSettings } from './settings.ts';
 import {
   type AnalysisResult,
   type DataTable,
@@ -43,8 +44,62 @@ export function paletteFor(name: string): string[] {
 
 /** Colour for a series, honouring any override set by clicking the mark. */
 function colorFor(style: FigureStyle, columnId: string, index: number): string {
-  const palette = paletteFor(style.palette);
+  const palette = paletteFor(getSettings().colourBlindSafe ? 'colourblind' : style.palette);
   return style.seriesColors[columnId] ?? palette[index % palette.length];
+}
+
+export type MarkerShape = 'circle' | 'square' | 'triangle' | 'diamond' | 'cross' | 'star';
+
+const SHAPES: MarkerShape[] = ['circle', 'square', 'triangle', 'diamond', 'cross', 'star'];
+
+/**
+ * In colour-blind safe mode each series gets its own shape, so the figure is
+ * still readable in greyscale or by someone who cannot separate the hues.
+ */
+export const shapeFor = (index: number): MarkerShape =>
+  getSettings().colourBlindSafe ? SHAPES[index % SHAPES.length] : 'circle';
+
+/** One data point, drawn as whichever shape its series was given. */
+function Marker({ x, y, r, shape, fill, fillOpacity, stroke, strokeWidth, onClick, cursor, children }: {
+  x: number; y: number; r: number; shape: MarkerShape;
+  fill: string; fillOpacity?: number; stroke?: string; strokeWidth?: number;
+  onClick?: (event: React.MouseEvent) => void; cursor?: string;
+  children?: React.ReactNode;
+}) {
+  const common = {
+    fill, fillOpacity, stroke, strokeWidth, onClick,
+    style: cursor ? { cursor } : undefined,
+  };
+  if (shape === 'circle') return <circle cx={x} cy={y} r={r} {...common}>{children}</circle>;
+  if (shape === 'square') {
+    return <rect x={x - r} y={y - r} width={r * 2} height={r * 2} {...common}>{children}</rect>;
+  }
+  if (shape === 'triangle') {
+    const h = r * 1.25;
+    return <polygon points={`${x},${y - h} ${x + h},${y + h * 0.7} ${x - h},${y + h * 0.7}`} {...common}>{children}</polygon>;
+  }
+  if (shape === 'diamond') {
+    const d = r * 1.3;
+    return <polygon points={`${x},${y - d} ${x + d},${y} ${x},${y + d} ${x - d},${y}`} {...common}>{children}</polygon>;
+  }
+  if (shape === 'cross') {
+    const a = r * 0.45;
+    const b = r * 1.25;
+    return (
+      <polygon {...common}
+        points={`${x - a},${y - b} ${x + a},${y - b} ${x + a},${y - a} ${x + b},${y - a} ${x + b},${y + a} ${x + a},${y + a} ${x + a},${y + b} ${x - a},${y + b} ${x - a},${y + a} ${x - b},${y + a} ${x - b},${y - a} ${x - a},${y - a}`}>
+        {children}
+      </polygon>
+    );
+  }
+  const outer = r * 1.4;
+  const inner = r * 0.6;
+  const points = Array.from({ length: 10 }, (_, i) => {
+    const radius = i % 2 === 0 ? outer : inner;
+    const angle = (Math.PI / 5) * i - Math.PI / 2;
+    return `${x + radius * Math.cos(angle)},${y + radius * Math.sin(angle)}`;
+  }).join(' ');
+  return <polygon points={points} {...common}>{children}</polygon>;
 }
 
 export type Selected =
@@ -312,11 +367,12 @@ export function Plot(props: PlotProps) {
                   ? 3 + 15 * Math.sqrt(Math.max(0, sizeSeries[i]) / (sizeMax || 1))
                   : style.pointSize;
                 return (
-                  <circle key={i} cx={xScale.toPixel(value)} cy={yScale.toPixel(entry.y[i])}
-                    r={isSelected ? radius + 1 : radius} fill={entry.color}
+                  <Marker key={i} x={xScale.toPixel(value)} y={yScale.toPixel(entry.y[i])}
+                    r={isSelected ? radius + 1 : radius} shape={shapeFor(entry.index)}
+                    fill={entry.color}
                     fillOpacity={plotType === 'bubble' ? 0.5 : 0.85} stroke="#fff" strokeWidth={0.8}>
                     <title>{`${entry.column.name}: (${value}, ${entry.y[i]})`}</title>
-                  </circle>
+                  </Marker>
                 );
               })}
             </g>
@@ -455,14 +511,15 @@ export function Plot(props: PlotProps) {
                   ? 0
                   : jitter(index * 977 + valueIndex * 31 + 7, bodyWidth * 0.55);
               return (
-                <circle key={valueIndex} cx={center + offset} cy={yScale.toPixel(value)}
+                <Marker key={valueIndex} x={center + offset} y={yScale.toPixel(value)}
                   r={isHot ? style.pointSize + 2 : style.pointSize}
+                  shape={shapeFor(index)}
                   fill={isHot ? '#111' : color}
                   fillOpacity={plotType === 'bar' ? 0.95 : 0.8}
                   stroke="#fff" strokeWidth={0.9}
                   onClick={(event) => { event.stopPropagation(); onPickRow?.(rowIndex, index); }}>
                   <title>{`${group.column.name} · row ${rowIndex + 1} · ${value}`}</title>
-                </circle>
+                </Marker>
               );
             })}
           </g>
@@ -1272,7 +1329,7 @@ function Legend({ items, placement, font }: any) {
     <g>
       {items.map((item: any, index: number) => (
         <g key={item.label} transform={`translate(${start + index * slot} ${placement.y})`}>
-          <circle cx={5} cy={-4} r={4} fill={item.color} />
+          <Marker x={5} y={-4} r={4} shape={shapeFor(item.shapeIndex ?? index)} fill={item.color} />
           <text x={15} y={0} fontSize={font - 1} fill="#444">{item.label}</text>
         </g>
       ))}
