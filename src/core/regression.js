@@ -597,4 +597,4 @@ function lgamma(z) {
   return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x);
 }
 
-export { clean };
+export { clean, choleskySolve, invertSymmetric };
