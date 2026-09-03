@@ -8,6 +8,19 @@ import { readFileSync } from 'node:fs';
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const ALLOWED = new Set(['MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', '0BSD']);
 
+// "Apache-2.0 OR MIT" means the user picks either, so the package is fine if
+// any branch is allowed. Parentheses and AND are not worth parsing: a package
+// licensed "A AND B" needs a human to look at it anyway.
+function acceptable(expression) {
+  if (ALLOWED.has(expression)) return true;
+  if (!/\bOR\b/.test(expression) || /\bAND\b/.test(expression)) return false;
+  return expression
+    .replace(/[()]/g, '')
+    .split(/\s+OR\s+/)
+    .map((part) => part.trim())
+    .some((part) => ALLOWED.has(part));
+}
+
 let failures = 0;
 for (const section of ['dependencies', 'devDependencies']) {
   console.log(`\n${section}`);
@@ -21,7 +34,7 @@ for (const section of ['dependencies', 'devDependencies']) {
       licence = 'NOT INSTALLED';
     }
     const runtime = section === 'dependencies';
-    const ok = !runtime || ALLOWED.has(licence);
+    const ok = !runtime || acceptable(licence);
     if (!ok) failures += 1;
     console.log(`  ${ok ? ' ' : '!'} ${name.padEnd(26)} ${licence}`);
   }

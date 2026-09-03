@@ -16,12 +16,15 @@ Regenerate this inventory with `npm run licenses`.
 | [Immer](https://immerjs.github.io/immer/) | MIT | Immutable updates |
 | [fflate](https://github.com/101arrowz/fflate) | MIT | Reading and writing the `.assayplot` ZIP container |
 | [SheetJS (xlsx)](https://sheetjs.com) | Apache-2.0 | Reading `.xlsx`, `.xls`, and `.ods` workbooks |
+| [@tauri-apps/api](https://tauri.app) | MIT / Apache-2.0 | Desktop runtime bridge |
+| [@tauri-apps/plugin-http](https://tauri.app) | MIT / Apache-2.0 | Outbound requests to the Notion API, which a webview cannot make directly |
 
 ## Desktop shell
 
 | Component | Licence | Used for |
 |---|---|---|
 | [Tauri](https://tauri.app) | MIT / Apache-2.0 | Desktop packaging, window, filesystem |
+| tauri-plugin-http | MIT / Apache-2.0 | The Rust half of the same |
 | Rust standard library and crates | MIT / Apache-2.0 | See `src-tauri/Cargo.lock` |
 
 ## Build and test only (not distributed)
