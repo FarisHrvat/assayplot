@@ -15,10 +15,14 @@
         "title": "AssayPlot",
         "width": 1440,
         "height": 960,
-        "minWidth": 1100,
-        "minHeight": 700,
+        "minWidth": 900,
+        "minHeight": 600,
         "resizable": true,
-        "label": "main"
+        "label": "main",
+        "maximizable": true,
+        "minimizable": true,
+        "closable": true,
+        "center": true
       }
     ],
     "security": {

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   type Cell,
   type Correction,
@@ -10,6 +10,9 @@ import {
   SHAPE_INFO,
   METHODS,
   METHOD_FAMILIES,
+  defaultStyle,
+  makeColumn,
+  makeFigure,
   availableMethods,
   panelLabel,
   columnValues,
@@ -34,7 +37,7 @@ import {
 } from './notion.ts';
 import { clearSnapshot, readSnapshot, type Snapshot } from './persist.ts';
 import {
-  LayoutFigure, Plot, PALETTES, PLOT_GROUPS,
+  LayoutFigure, Plot, PALETTES, PLOT_GROUPS, PLOT_KINDS,
   paletteFor, plotsForShape, type LayoutPanel, type Selected,
 } from './plot.tsx';
 import {
@@ -800,6 +803,17 @@ function ExportDialog({ name, getNode, beforeExport, onClose }: {
   );
 }
 
+/** A tiny made-up dataset, only ever used to draw the plot-type previews. */
+function demoThumbnailTable(): DataTable {
+  return {
+    id: 'thumb', name: 'preview', shape: 'column',
+    columns: [makeColumn('A'), makeColumn('B'), makeColumn('C')],
+    rows: [
+      [8, 5, 3], [9, 6, 4], [7, 5, 2], [10, 7, 4], [8, 4, 3], [9, 6, 5],
+    ],
+  };
+}
+
 function ThemeToggle({ theme, onChange }: { theme: Theme; onChange: (next: Theme) => void }) {
   const options: { id: Theme; glyph: string; label: string }[] = [
     { id: 'light', glyph: '☀', label: 'Light' },
@@ -1537,7 +1551,12 @@ function FigureView({ id }: { id: string }) {
 
           <div className="prop-group">
             <h3>Plot</h3>
-            <Field label="Type">
+            <Field label="Type" hint={
+              <>
+                <strong>{PLOT_KINDS.find((kind) => kind.id === figure.plotType)?.label}</strong>
+                <PlotThumbnail kind={figure.plotType} />
+              </>
+            }>
               <select value={figure.plotType}
                 onChange={(event) => updateFigure(figure.id, { plotType: event.target.value as PlotType })}>
                 {PLOT_GROUPS.map((group) => {
@@ -1552,7 +1571,11 @@ function FigureView({ id }: { id: string }) {
               </select>
             </Field>
 
-            <Field label="Significance from">
+            <Field label="Significance from" hint={
+              <>Point this at an analysis to draw brackets with its adjusted p-values.
+              The brackets follow the analysis, so correcting for multiple comparisons
+              changes what the figure claims.</>
+            }>
               <select value={figure.analysisId ?? ''}
                 onChange={(event) => updateFigure(figure.id, { analysisId: event.target.value || null })}>
                 <option value="">None</option>
@@ -1571,7 +1594,10 @@ function FigureView({ id }: { id: string }) {
 
           <div className="prop-group">
             <h3>Axes</h3>
-            <Field label="Gridlines">
+            <Field label="Gridlines" hint={
+              <>Most journals prefer no gridlines, or faint horizontal ones only. They
+              should never compete with the data.</>
+            }>
               <select value={figure.style.grid} onChange={(event) => updateStyle(figure.id, { grid: event.target.value as any })}>
                 <option value="none">None</option>
                 <option value="horizontal">Horizontal only</option>
@@ -1608,7 +1634,15 @@ function FigureView({ id }: { id: string }) {
 
           <div className="prop-group">
             <h3>Marks</h3>
-            <Field label="Error bars">
+            <Field label="Error bars" hint={
+              <>
+                <strong>SD</strong> describes how spread the data are.{' '}
+                <strong>SEM</strong> describes how precisely you know the mean, and
+                is always smaller — it shrinks as you add replicates, which is why
+                it flatters a figure. <strong>95% CI</strong> is the range the true
+                mean plausibly lies in. Whichever you draw, say so in the caption.
+              </>
+            }>
               <select value={figure.style.errorBars} onChange={(event) => updateStyle(figure.id, { errorBars: event.target.value as any })}>
                 <option value="sd">Standard deviation</option>
                 <option value="sem">Standard error (SEM)</option>
@@ -1963,11 +1997,56 @@ function ViewHead({ eyebrow, title, onRename, children }: {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, hint, hintAlign = 'right' }: {
+  label: string;
+  children: React.ReactNode;
+  hint?: React.ReactNode;
+  hintAlign?: 'left' | 'right';
+}) {
   return (
     <label className="field">
-      <span>{label}</span>
+      <span>
+        {label}
+        {hint && <Hint align={hintAlign}>{hint}</Hint>}
+      </span>
       {children}
     </label>
   );
+}
+
+/** A small ? that explains a control, and can show a worked example. */
+function Hint({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'right' }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="hint-anchor"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}>
+      <button type="button" className="hint-button"
+        aria-expanded={open}
+        aria-label="What is this?"
+        onClick={(event) => { event.preventDefault(); setOpen(!open); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}>
+        ?
+      </button>
+      {open && <span className={`hint-popover ${align}`} role="tooltip">{children}</span>}
+    </span>
+  );
+}
+
+/** A miniature of a plot type, drawn so the picker can show what it means. */
+function PlotThumbnail({ kind }: { kind: PlotType }) {
+  const table = useMemo(() => {
+    const base = demoThumbnailTable();
+    return base;
+  }, []);
+  const figure = useMemo(() => ({
+    ...makeFigure('preview', table.id, kind),
+    style: defaultStyle({
+      width: 220, height: 130, fontSize: 8, pointSize: 2.5,
+      showLegend: false, grid: 'none', showSignificance: false,
+    }),
+  }), [kind, table.id]);
+
+  return <Plot table={table} figure={figure} />;
 }

@@ -66,19 +66,30 @@ Not built yet: repeated-measures ANOVA, three-way ANOVA, mixed models, Cox
 regression, confidence intervals on dose–response parameters, and subcolumn
 replicates.
 
-## Try it
+## Download
+
+Grab the build for your machine from the
+[releases page](https://github.com/FarisHrvat/assayplot/releases) and open it.
+Nothing else to install.
+
+| Your machine | File |
+|---|---|
+| Mac, Apple Silicon (M1 and later) | `AssayPlot_x.y.z_aarch64.dmg` |
+| Mac, Intel | `AssayPlot_x.y.z_x64.dmg` |
+| Windows | `AssayPlot_x.y.z_x64-setup.exe` |
+| Linux, Debian or Ubuntu | `AssayPlot_x.y.z_amd64.deb` |
+| Linux, anything else | `AssayPlot_x.y.z_amd64.AppImage` |
+
+Open one of the projects in [`examples/`](examples) to see a finished analysis.
+
+## Building it yourself
+
+Only needed if you want to change the code.
 
 ```bash
 npm install
-npm run dev
-```
-
-Open http://localhost:5173 and load one of the projects in [`examples/`](examples).
-
-For the desktop app:
-
-```bash
-npm run desktop:dev                # develop
+npm run dev                        # http://localhost:5173
+npm run desktop:dev                # the desktop app, with reload
 npm run desktop:dmg                # macOS, app and disk image
 npm run desktop:build:installers   # Windows and Linux
 ```
