@@ -230,7 +230,10 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 
 /* ------------------------------------------------------------------ stage */
 .stage { flex: 1; overflow-y: auto; padding: 1.2rem 1.5rem 4rem; min-width: 0; }
-.view { max-width: 1080px; }
+/* Capped and centred: a line of text 3000 pixels wide is unreadable, and
+   leaving the whole column hard against the left of a 33-inch monitor looks
+   like a page that failed to load. */
+.view { max-width: 1080px; margin-inline: auto; }
 
 .view-head {
   display: flex; align-items: flex-end; justify-content: space-between;
