@@ -749,3 +749,47 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 .help-points { margin: 0; padding-left: 1.1rem; max-width: 76ch; }
 .help-points li { margin-bottom: 0.45rem; font-size: 0.87rem; color: var(--ink-soft); }
 .help-points strong { color: var(--ink); }
+
+/* ---------------------------------------------------------------- modals */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 60;
+  padding: 1.5rem;
+}
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: 0 20px 60px var(--shadow);
+  padding: 1.3rem 1.5rem;
+  width: min(34rem, 100%);
+  max-height: 85vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.modal h2 { margin: 0; font-size: 1.1rem; }
+.modal-lede, .modal-note { margin: 0; font-size: 0.86rem; color: var(--ink-soft); }
+.modal-note {
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+  border-left: 2px solid var(--warn-ink);
+  padding: 0.55rem 0.75rem;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.modal-warn { margin: -0.4rem 0 0; font-size: 0.8rem; color: var(--flag-ink); }
+.modal-steps { margin: 0; padding-left: 1.2rem; font-size: 0.85rem; color: var(--ink-soft); }
+.modal-steps li { margin-bottom: 0.3rem; }
+.modal-steps code {
+  background: var(--sunk);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font: 0.86em var(--mono);
+}
+.modal-actions { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem; }
+.modal-spacer { flex: 1; }

@@ -6,7 +6,7 @@ Prism, for people who would rather not write code.
 It runs on your machine. There is no account, no cloud, and no subscription, and
 your data never leaves the computer.
 
-[User guide](docs/GUIDE.md) · [How the statistics are validated](docs/VALIDATION.md) · [Roadmap](docs/ROADMAP.md)
+[User guide](docs/GUIDE.md) · [How the statistics are validated](docs/VALIDATION.md) · [Roadmap](docs/ROADMAP.md) · [Publishing this project](docs/OPEN-SOURCE.md)
 
 ## Status
 
@@ -58,7 +58,9 @@ carries a SHA-256 of every data table beside the analysis that used it, so a
 reviewer can confirm the numbers analysed were the numbers supplied.
 
 Projects are a ZIP of readable JSON — unzip one and read your data without
-AssayPlot installed. Work is autosaved and offered back after a crash.
+AssayPlot installed. Work is autosaved and offered back after a crash. Reports
+export as HTML or Markdown, or go straight to a page in your own Notion
+workspace using an integration you create.
 
 Not built yet: repeated-measures ANOVA, three-way ANOVA, mixed models, Cox
 regression, confidence intervals on dose–response parameters, and subcolumn

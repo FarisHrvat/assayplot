@@ -27,6 +27,10 @@ import {
 import { useTheme, type Theme } from './theme.ts';
 import { METHOD_HELP, SHAPE_HELP } from './help.ts';
 import { buildReport, reportToHtml, reportToMarkdown } from './report.ts';
+import {
+  forgetSettings, loadSettings, normalisePageId, runningInDesktop, saveSettings,
+  sendToNotion, type NotionSettings,
+} from './notion.ts';
 import { clearSnapshot, readSnapshot, type Snapshot } from './persist.ts';
 import {
   LayoutFigure, Plot, PALETTES, PLOT_GROUPS,
@@ -221,6 +225,7 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
   const reportProblem = useStore((s) => s.reportProblem);
   const [theme, setTheme] = useTheme();
   const [busy, setBusy] = useState(false);
+  const [notionOpen, setNotionOpen] = useState(false);
 
   const openRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
@@ -353,10 +358,15 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
         <button disabled={busy} onClick={() => exportReport('md')} title="The same report as Markdown">
           .md
         </button>
+        <button onClick={() => setNotionOpen(true)} title="Send the report to a page in your Notion workspace">
+          Notion
+        </button>
         <button className="primary" onClick={save}>Save project</button>
         <span className="divider" />
         <ThemeToggle theme={theme} onChange={setTheme} />
       </div>
+
+      {notionOpen && <NotionDialog onClose={() => setNotionOpen(false)} />}
 
       <input ref={openRef} type="file" accept=".assayplot,.zip,.json" hidden
         onChange={(event) => {
@@ -470,6 +480,105 @@ function Navigator() {
         <span className="nav-foot-note">Offline. Nothing leaves this machine.</span>
       </div>
     </nav>
+  );
+}
+
+function NotionDialog({ onClose }: { onClose: () => void }) {
+  const notify = useStore((s) => s.notify);
+  const reportProblem = useStore((s) => s.reportProblem);
+  const [settings, setSettings] = useState<NotionSettings>(loadSettings);
+  const [sending, setSending] = useState(false);
+  const desktop = runningInDesktop();
+
+  const send = async () => {
+    setSending(true);
+    try {
+      saveSettings(settings);
+      const report = await buildReport(useStore.getState().project);
+      const url = await sendToNotion(report, settings);
+      onClose();
+      notify('Report sent to Notion.');
+      window.open(url, '_blank', 'noopener');
+    } catch (error) {
+      onClose();
+      reportProblem({
+        title: 'The report could not be sent to Notion',
+        detail: error instanceof Error ? error.message : 'Notion rejected the request.',
+        done: 'Nothing was created in your workspace.',
+        notDone: 'The report was not sent. Your project is unchanged.',
+        fix: [
+          'Check the integration token starts with "ntn_" or "secret_" and was copied in full.',
+          'In Notion, open the parent page, choose Connections, and add your integration — a page the integration has not been given access to returns "Could not find page".',
+          'Export the report as Markdown instead and paste it into Notion; it converts on paste.',
+        ],
+      });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const idLooksValid = normalisePageId(settings.parentPageId) !== null;
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" role="dialog" aria-label="Send to Notion" onClick={(event) => event.stopPropagation()}>
+        <h2>Send the report to Notion</h2>
+
+        {!desktop && (
+          <p className="modal-note">
+            This works in the desktop app. Notion's API cannot be called from a
+            browser tab, so in the web version export the report as Markdown and
+            paste it into a Notion page instead — it converts on paste.
+          </p>
+        )}
+
+        <p className="modal-lede">
+          AssayPlot talks to your own workspace using an integration you create.
+          Nothing goes anywhere else, and the token is stored on this machine only.
+        </p>
+
+        <ol className="modal-steps">
+          <li>
+            At <code>notion.so/my-integrations</code>, create an internal
+            integration and copy its secret.
+          </li>
+          <li>
+            Open the Notion page the report should live under, and add your
+            integration to it under Connections.
+          </li>
+          <li>Paste both below.</li>
+        </ol>
+
+        <label className="field">
+          <span>Integration token</span>
+          <input type="password" value={settings.token} autoComplete="off" spellCheck={false}
+            placeholder="ntn_…"
+            onChange={(event) => setSettings({ ...settings, token: event.target.value })} />
+        </label>
+
+        <label className="field">
+          <span>Parent page — paste its URL or ID</span>
+          <input value={settings.parentPageId} spellCheck={false}
+            placeholder="https://www.notion.so/Lab-notes-1a2b3c…"
+            onChange={(event) => setSettings({ ...settings, parentPageId: event.target.value })} />
+        </label>
+        {settings.parentPageId && !idLooksValid && (
+          <p className="modal-warn">That does not contain a Notion page ID yet.</p>
+        )}
+
+        <div className="modal-actions">
+          <button onClick={() => { forgetSettings(); setSettings({ token: '', parentPageId: '' }); }}>
+            Forget these
+          </button>
+          <span className="modal-spacer" />
+          <button onClick={onClose}>Cancel</button>
+          <button className="primary" disabled={sending || !desktop || !settings.token || !idLooksValid}
+            onClick={send}>
+            {sending ? 'Sending…' : 'Send report'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
