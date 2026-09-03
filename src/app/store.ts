@@ -34,7 +34,21 @@ export type Selection =
   | { kind: 'table'; id: string }
   | { kind: 'analysis'; id: string }
   | { kind: 'figure'; id: string }
-  | { kind: 'layout'; id: string };
+  | { kind: 'layout'; id: string }
+  | { kind: 'help'; id: string };
+
+/**
+ * Something that did not work, stated in full: what happened, what was and was
+ * not done as a result, and what to try. Shown on screen until dismissed,
+ * because a message that fades after three seconds is a message nobody read.
+ */
+export interface Problem {
+  title: string;
+  detail: string;
+  done?: string;
+  notDone?: string;
+  fix?: string[];
+}
 
 interface State {
   project: Project;
@@ -42,8 +56,10 @@ interface State {
   past: Project[];
   future: Project[];
   dirty: boolean;
-  /** Transient message shown in the status bar. */
+  /** Transient confirmation, for things that worked. */
   toast: string | null;
+  /** Something that did not work. Stays until dismissed. */
+  problem: Problem | null;
 
   commit: (next: Project, label?: string) => void;
   replaceProject: (next: Project) => void;
@@ -51,6 +67,8 @@ interface State {
   redo: () => void;
   select: (selection: Selection) => void;
   notify: (message: string | null) => void;
+  reportProblem: (problem: Problem) => void;
+  dismissProblem: () => void;
 
   setProjectName: (name: string) => void;
 
@@ -100,6 +118,7 @@ export const useStore = create<State>((set, get) => ({
   future: [],
   dirty: false,
   toast: null,
+  problem: null,
 
   commit: (next) =>
     set((state) => ({
@@ -146,6 +165,8 @@ export const useStore = create<State>((set, get) => ({
 
   select: (selection) => set({ selection }),
   notify: (toast) => set({ toast }),
+  reportProblem: (problem) => set({ problem, toast: null }),
+  dismissProblem: () => set({ problem: null }),
 
   setProjectName: (name) => get().commit({ ...get().project, name }),
 

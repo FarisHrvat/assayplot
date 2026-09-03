@@ -8,6 +8,7 @@ import {
   type TableShape,
   APP_VERSION,
   SHAPE_INFO,
+  METHODS,
   METHOD_FAMILIES,
   availableMethods,
   panelLabel,
@@ -19,7 +20,13 @@ import {
   significanceStars,
   valueColumns,
 } from './model.ts';
-import { analysisById, markSaved, resultFor, startAutosave, tableById, useStore, type Selection } from './store.ts';
+import {
+  analysisById, markSaved, resultFor, startAutosave, tableById, useStore,
+  type Problem, type Selection,
+} from './store.ts';
+import { useTheme, type Theme } from './theme.ts';
+import { METHOD_HELP, SHAPE_HELP } from './help.ts';
+import { buildReport, reportToHtml, reportToMarkdown } from './report.ts';
 import { clearSnapshot, readSnapshot, type Snapshot } from './persist.ts';
 import {
   LayoutFigure, Plot, PALETTES, PLOT_GROUPS,
@@ -92,6 +99,34 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
 }
 
 // ===========================================================================
+// problems
+// ===========================================================================
+
+function ProblemPanel({ problem, onDismiss }: { problem: Problem; onDismiss: () => void }) {
+  return (
+    <div className="problem" role="alert">
+      <div className="problem-body">
+        <h2>{problem.title}</h2>
+        <p>{problem.detail}</p>
+        {(problem.done || problem.notDone) && (
+          <dl className="problem-outcome">
+            {problem.done && (<><dt>What was done</dt><dd>{problem.done}</dd></>)}
+            {problem.notDone && (<><dt>What was not done</dt><dd>{problem.notDone}</dd></>)}
+          </dl>
+        )}
+        {problem.fix && problem.fix.length > 0 && (
+          <>
+            <h3>What to try</h3>
+            <ul>{problem.fix.map((step) => <li key={step}>{step}</li>)}</ul>
+          </>
+        )}
+      </div>
+      <button className="problem-close" onClick={onDismiss} aria-label="Dismiss">×</button>
+    </div>
+  );
+}
+
+// ===========================================================================
 // app
 // ===========================================================================
 
@@ -104,6 +139,8 @@ export function App() {
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
   const [recovery, setRecovery] = useState<Snapshot | null>(null);
+  const problem = useStore((s) => s.problem);
+  const dismissProblem = useStore((s) => s.dismissProblem);
 
   // Offer any work left behind by a crash or a closed tab, once, at startup.
   useEffect(() => {
@@ -166,6 +203,7 @@ export function App() {
         </div>
       )}
       <Toolbar canUndo={canUndo} canRedo={canRedo} />
+      {problem && <ProblemPanel problem={problem} onDismiss={dismissProblem} />}
       <div className="body">
         <Navigator />
         <main className="stage" id="stage" tabIndex={-1}>
@@ -173,6 +211,7 @@ export function App() {
           {selection.kind === 'analysis' && <AnalysisView key={selection.id} id={selection.id} />}
           {selection.kind === 'figure' && <FigureView key={selection.id} id={selection.id} />}
           {selection.kind === 'layout' && <LayoutView key={selection.id} id={selection.id} />}
+          {selection.kind === 'help' && <HelpView />}
         </main>
       </div>
       {toast && <div className="toast" role="status">{toast}</div>}
@@ -194,6 +233,10 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
   const replaceProject = useStore((s) => s.replaceProject);
   const commit = useStore((s) => s.commit);
   const select = useStore((s) => s.select);
+
+  const reportProblem = useStore((s) => s.reportProblem);
+  const [theme, setTheme] = useTheme();
+  const [busy, setBusy] = useState(false);
 
   const openRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
@@ -220,27 +263,81 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
       replaceProject(deserializeProject(bytes));
       notify(`Opened ${file.name}.`);
     } catch (error) {
-      notify(error instanceof Error ? error.message : 'That file could not be opened.');
+      reportProblem({
+        title: `“${file.name}” could not be opened`,
+        detail: error instanceof Error ? error.message : 'The file could not be read.',
+        done: 'Nothing. Your current project is untouched.',
+        notDone: 'The file was not opened.',
+        fix: [
+          'Check this is a .assayplot file and not a spreadsheet — use Import data for those.',
+          'A project is an ordinary ZIP archive: if you can unzip it and see a manifest.json, the file is intact and this is a bug worth reporting.',
+          'If it came from a much newer version of AssayPlot, update first.',
+        ],
+      });
     }
   };
 
   const importData = async (files: FileList) => {
     const added: string[] = [];
     let next = useStore.getState().project;
+
     for (const file of Array.from(files)) {
       try {
         const table = await tableFromFile(file);
         next = { ...next, tables: [...next.tables, table] };
         added.push(`${table.name} (${table.rows.length} × ${table.columns.length})`);
       } catch (error) {
-        notify(error instanceof Error ? error.message : `${file.name} could not be read.`);
+        reportProblem({
+          title: `“${file.name}” could not be imported`,
+          detail: error instanceof Error ? error.message : 'The file could not be read.',
+          done: added.length
+            ? `${added.length} earlier file(s) were imported: ${added.join(', ')}.`
+            : 'Nothing. No data was added.',
+          notDone: `“${file.name}” and any files after it were not imported.`,
+          fix: [
+            `Supported formats are ${IMPORT_EXTENSIONS.join(', ')}.`,
+            'Only the first worksheet of a workbook is read — move the data you want to the first sheet.',
+            'If the file opens in Excel, try exporting it as CSV and importing that.',
+          ],
+        });
+        if (added.length) {
+          commit(next);
+          const last = next.tables[next.tables.length - 1];
+          if (last) select({ kind: 'table', id: last.id });
+        }
         return;
       }
     }
+
     commit(next);
     const last = next.tables[next.tables.length - 1];
     if (last) select({ kind: 'table', id: last.id });
     notify(`Imported ${added.join(', ')}.`);
+  };
+
+  const exportReport = async (format: 'md' | 'html') => {
+    setBusy(true);
+    try {
+      const report = await buildReport(useStore.getState().project);
+      const safe = project.name.replace(/[^\w\-. ]+/g, '_').trim() || 'report';
+      if (format === 'md') {
+        download(`${safe}-report.md`, reportToMarkdown(report), 'text/markdown');
+        notify('Report exported as Markdown. Paste it straight into Notion or a doc.');
+      } else {
+        download(`${safe}-report.html`, reportToHtml(report), 'text/html');
+        notify('Report exported. Open it in a browser, or print it to PDF.');
+      }
+    } catch (error) {
+      reportProblem({
+        title: 'The report could not be generated',
+        detail: error instanceof Error ? error.message : 'Something went wrong while building the report.',
+        done: 'Nothing. Your project is unchanged.',
+        notDone: 'No report file was written.',
+        fix: ['Check that every analysis in the project opens without an error, then try again.'],
+      });
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -265,7 +362,16 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
           Import data
         </button>
         <button onClick={() => openRef.current?.click()}>Open</button>
+        <button disabled={busy} onClick={() => exportReport('html')}
+          title="A report of every analysis, with a checksum of the data each one used">
+          Report
+        </button>
+        <button disabled={busy} onClick={() => exportReport('md')} title="The same report as Markdown">
+          .md
+        </button>
         <button className="primary" onClick={save}>Save project</button>
+        <span className="divider" />
+        <ThemeToggle theme={theme} onChange={setTheme} />
       </div>
 
       <input ref={openRef} type="file" accept=".assayplot,.zip,.json" hidden
@@ -374,11 +480,36 @@ function Navigator() {
         ))}
       </Section>
 
+      <button className={`nav-help ${selection.kind === 'help' ? 'active' : ''}`}
+        onClick={() => select({ kind: 'help', id: 'help' })}>
+        ? &nbsp;Which test should I use?
+      </button>
+
       <div className="nav-foot">
         <span>AssayPlot {APP_VERSION}</span>
         <span className="nav-foot-note">Offline. Nothing leaves this machine.</span>
       </div>
     </nav>
+  );
+}
+
+function ThemeToggle({ theme, onChange }: { theme: Theme; onChange: (next: Theme) => void }) {
+  const options: { id: Theme; glyph: string; label: string }[] = [
+    { id: 'light', glyph: '☀', label: 'Light' },
+    { id: 'system', glyph: '◐', label: 'Match the system' },
+    { id: 'dark', glyph: '☾', label: 'Dark' },
+  ];
+  return (
+    <span className="theme-toggle" role="group" aria-label="Colour scheme">
+      {options.map((option) => (
+        <button key={option.id}
+          aria-pressed={theme === option.id}
+          title={option.label}
+          onClick={() => onChange(option.id)}>
+          {option.glyph}
+        </button>
+      ))}
+    </span>
   );
 }
 
@@ -963,6 +1094,7 @@ function FigureView({ id }: { id: string }) {
   const updateStyle = useStore((s) => s.updateStyle);
   const renameNode = useStore((s) => s.renameNode);
   const notify = useStore((s) => s.notify);
+  const reportProblem = useStore((s) => s.reportProblem);
   const select = useStore((s) => s.select);
   const svgRef = useRef<HTMLDivElement>(null);
 
@@ -1009,7 +1141,16 @@ function FigureView({ id }: { id: string }) {
       download(`${figure.name}-${dpi}dpi.png`, blob, 'image/png');
       notify(`PNG exported at ${dpi} DPI.`);
     } catch (error) {
-      notify(error instanceof Error ? error.message : 'Export failed.');
+      reportProblem({
+        title: 'The figure could not be saved as a PNG',
+        detail: error instanceof Error ? error.message : 'Rasterising the figure failed.',
+        done: 'Nothing. The figure itself is unchanged.',
+        notDone: 'No image file was written.',
+        fix: [
+          'Export SVG instead — it is a better format for a journal anyway, and does not need rasterising.',
+          `At ${dpi} DPI this figure would be ${Math.round(figure.style.width * dpi / 96)} × ${Math.round(figure.style.height * dpi / 96)} pixels. Try a smaller figure size or 300 DPI.`,
+        ],
+      });
     }
   };
 
@@ -1285,7 +1426,16 @@ function LayoutView({ id }: { id: string }) {
       download(`${layout.name}-${dpi}dpi.png`, blob, 'image/png');
       notify(`Layout exported at ${dpi} DPI.`);
     } catch (error) {
-      notify(error instanceof Error ? error.message : 'Export failed.');
+      useStore.getState().reportProblem({
+        title: 'The layout could not be saved as a PNG',
+        detail: error instanceof Error ? error.message : 'Rasterising the layout failed.',
+        done: 'Nothing. The layout is unchanged.',
+        notDone: 'No image file was written.',
+        fix: [
+          'Export SVG instead.',
+          'A layout of several large panels can exceed what the browser will rasterise. Reduce the panel sizes or export at 300 DPI.',
+        ],
+      });
     }
   };
 
@@ -1371,6 +1521,116 @@ function LayoutView({ id }: { id: string }) {
           )}
         </aside>
       </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// help
+// ===========================================================================
+
+function HelpView() {
+  const [openMethod, setOpenMethod] = useState<string | null>(null);
+
+  return (
+    <div className="view help">
+      <div className="view-head">
+        <div>
+          <span className="eyebrow">Help</span>
+          <h1 className="view-title-static">Choosing and running a test</h1>
+        </div>
+      </div>
+
+      <p className="hint">
+        AssayPlot will not choose a test for you. The right one depends on how the
+        experiment was done, which the software cannot see. This page says what each
+        one answers, what it needs, and what it does not tell you.
+      </p>
+
+      <section className="panel">
+        <h3>Table shapes</h3>
+        <p className="help-lede">
+          The shape you pick decides which analyses and plots are offered, so start here.
+        </p>
+        <div className="shape-grid">
+          {(Object.keys(SHAPE_HELP) as (keyof typeof SHAPE_HELP)[]).map((shape) => (
+            <article key={shape} className="shape-card">
+              <h4>{SHAPE_HELP[shape].title}</h4>
+              <p>{SHAPE_HELP[shape].body}</p>
+              <pre>{SHAPE_HELP[shape].example}</pre>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {METHOD_FAMILIES.map((family) => {
+        const methods = METHODS.filter((method) => method.family === family);
+        if (!methods.length) return null;
+        return (
+          <section className="panel" key={family}>
+            <h3>{family}</h3>
+            {methods.map((method) => {
+              const help = METHOD_HELP[method.id];
+              const isOpen = openMethod === method.id;
+              return (
+                <article key={method.id} className={`help-method ${isOpen ? 'open' : ''}`}>
+                  <button className="help-summary"
+                    aria-expanded={isOpen}
+                    onClick={() => setOpenMethod(isOpen ? null : method.id)}>
+                    <span className="help-name">{method.label}</span>
+                    <span className="help-answers">{help.answers}</span>
+                    <span className="help-chevron" aria-hidden="true">{isOpen ? '−' : '+'}</span>
+                  </button>
+
+                  {isOpen && (
+                    <div className="help-detail">
+                      <dl>
+                        <dt>Needs</dt>
+                        <dd>{help.needs}</dd>
+
+                        <dt>Assumes</dt>
+                        <dd><ul>{help.assumes.map((item) => <li key={item}>{item}</li>)}</ul></dd>
+
+                        <dt>Does not</dt>
+                        <dd><ul>{help.doesNot.map((item) => <li key={item}>{item}</li>)}</ul></dd>
+
+                        <dt>How</dt>
+                        <dd><ol>{help.how.map((item) => <li key={item}>{item}</li>)}</ol></dd>
+
+                        <dt>Report</dt>
+                        <dd>{help.reports}</dd>
+
+                        {help.insteadUse && (<><dt>Consider instead</dt><dd>{help.insteadUse}</dd></>)}
+                      </dl>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </section>
+        );
+      })}
+
+      <section className="panel">
+        <h3>Reading a result</h3>
+        <ul className="help-points">
+          <li><strong>The confidence interval says more than the P value.</strong> It tells you how big the effect might plausibly be; a P value only says whether you can rule out exactly zero.</li>
+          <li><strong>A large P value is not evidence of no effect.</strong> With six replicates you are unlikely to detect anything but a large one.</li>
+          <li><strong>Say which error bars you drew.</strong> SD, SEM and 95% CI look similar and mean different things. A figure that does not say is unreviewable.</li>
+          <li><strong>Correct for multiple comparisons.</strong> Three groups means three tests and three chances at a false positive. Tukey and Dunn handle this properly.</li>
+          <li><strong>Decide the analysis before you see the data.</strong> Trying tests until one is significant produces a number that means nothing.</li>
+        </ul>
+      </section>
+
+      <section className="panel">
+        <h3>What AssayPlot does not do</h3>
+        <ul className="help-points">
+          <li>Repeated-measures ANOVA, three-way ANOVA, mixed-effects models and Cox regression are not implemented.</li>
+          <li>Dose–response fits report no confidence interval on the EC50 yet.</li>
+          <li>There are no subcolumn replicates: use one row per replicate.</li>
+          <li>It is <strong>not validated for clinical or regulatory use</strong>. For anything consequential, confirm the result with a statistician.</li>
+        </ul>
+      </section>
     </div>
   );
 }
