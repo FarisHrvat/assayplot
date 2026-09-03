@@ -240,7 +240,11 @@ export function Plot(props: PlotProps) {
     y: legendAtBottom ? height - 10 : plotTop - 16,
   };
 
-  const shared = { ...props, plotLeft, plotRight, plotTop, plotBottom, height, width, font, legendPlacement };
+  // When the legend takes the bottom row, the axis label sits above it rather
+  // than on top of it.
+  const xLabelY = height - 12 - (legendAtBottom ? 18 : 0);
+
+  const shared = { ...props, plotLeft, plotRight, plotTop, plotBottom, height, width, font, legendPlacement, xLabelY };
 
   const canvas = (children: React.ReactNode) => (
     <svg
@@ -499,7 +503,7 @@ export function Plot(props: PlotProps) {
           {group.column.name}
         </text>
       ))}
-      <XLabelText {...shared} x={(plotLeft + plotRight) / 2} y={height - 12} />
+      <XLabelText {...shared} x={(plotLeft + plotRight) / 2} y={xLabelY} />
     </>
   );
 }
@@ -656,7 +660,7 @@ function YAxis(props: any) {
 }
 
 function XAxisNumeric(props: any) {
-  const { ticks, xScale, plotLeft, plotRight, plotBottom, height, font } = props;
+  const { ticks, xScale, plotLeft, plotRight, plotBottom, height, font, xLabelY } = props;
   return (
     <g>
       <line x1={plotLeft} x2={plotRight} y1={plotBottom} y2={plotBottom} stroke="#333" />
@@ -668,7 +672,7 @@ function XAxisNumeric(props: any) {
           </text>
         </g>
       ))}
-      <XLabelText {...props} x={(plotLeft + plotRight) / 2} y={height - 12} />
+      <XLabelText {...props} x={(plotLeft + plotRight) / 2} y={xLabelY ?? height - 12} />
     </g>
   );
 }

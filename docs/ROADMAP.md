@@ -1,139 +1,91 @@
-# AssayPlot: end-to-end build plan
+# AssayPlot roadmap
 
-## 1. Product definition
+Where the project is, and what is deliberately not built yet.
 
-AssayPlot should help a wet-lab or life-science researcher complete the common workflow without writing code:
+## Where it is
 
-1. Start a project or import CSV/XLSX.
-2. Choose a data shape that matches the experiment.
-3. Clean, label, transform, and optionally exclude observations with an audit trail.
-4. Pick an analysis using plain-language guidance.
-5. Review assumptions, run the analysis, and inspect effect sizes, uncertainty, and multiplicity corrections.
-6. Build an editable graph from raw points and analysis results.
-7. Assemble figure panels, annotate, export, and save a reproducible project.
+**v0.3.0 — testable alpha.** The workflow is complete end to end: import data,
+run a defensible analysis, build a figure, assemble a panel, export it, save the
+project, reopen it later. 164 tests pass, 36 of them checked against R 4.4.2.
 
-The product is not a clone of GraphPad’s UI or file format. It should reproduce the useful workflow with an open project format and transparent methods.
+| Milestone | State |
+|---|---|
+| M0 · Statistical core validated against R | Done |
+| M1 · Document model, live recompute, project format | Done |
+| M2 · Data grid, import, undo | Done |
+| M3 · Analyses, post-hoc, assumption checks | Done |
+| M4 · Figure engine, direct editing, export | Done |
+| M5 · Nonlinear regression | Partial — 4PL fits, but no parameter intervals |
+| M6 · Layouts, packaging, docs, accessibility | Mostly done — signing outstanding |
 
-## 2. Scope
+## Release blockers
 
-### MVP (first public alpha)
+Things that must be settled before calling this 1.0 and asking labs to rely on it.
 
-- Offline desktop/web app shell.
-- Project file containing data, analysis specifications, graph specifications, and app version.
-- CSV import with type detection, missing-value handling, column renaming, filtering, and undo/redo.
-- Data table modes: column, grouped, XY, and multiple-variable/long format.
-- Descriptive statistics and visualization of raw observations.
-- Welch/Student independent t-test, paired t-test, one-way ANOVA, and Mann–Whitney/Wilcoxon.
-- Multiple-comparison corrections: Holm and Benjamini–Hochberg.
-- Graphs: scatter, dot/strip, bar with points, box, violin, histogram, XY line, and dose-response preview.
-- Figure styling: colors, symbols, axes, labels, error bars, significance brackets, and themes.
-- Export to SVG/PNG/PDF and CSV/JSON.
-- Plain-language assumption checklist and a “methods” summary suitable for copying into a manuscript.
+**Code signing.** Builds are unsigned, so macOS Gatekeeper and Windows
+SmartScreen both warn on first launch. Unsigned scientific software gets
+abandoned at the security dialog. This needs:
 
-### Phase 2
+- An Apple Developer account, a Developer ID certificate, and notarisation.
+- A Windows code-signing certificate. These increasingly require hardware-backed
+  key storage and issuance is measured in weeks.
 
-- Two-way/repeated-measures ANOVA and mixed-effects models.
-- Linear and nonlinear regression with a model library, confidence/prediction bands, residual diagnostics, and parameter tables.
-- Kaplan–Meier/Cox survival analysis, contingency tests, ROC, correlation, PCA, and Bland–Altman.
-- Power/sample-size analysis.
-- Figure canvas with multi-panel layouts, alignment, guides, and reusable templates.
-- R/Python syntax export and a deterministic analysis manifest for CI.
+Both require the project owner's identity and payment; neither can be automated
+away. Start them early — the technical wiring is an afternoon, the paperwork is
+not.
 
-### Phase 3
+**Beta with real labs.** The interface has been designed from an inferred
+workflow, not an observed one. Watching five people use it on their own data
+will change decisions that no amount of testing will surface.
 
-- Plugin API for analyses and graph layers.
-- Optional collaboration/sync service, with local-only mode remaining complete.
-- Import adapters for Excel, Prism exports, and common instrument formats.
-- Accessibility, internationalization, institutional deployment, and signed installers.
+**Confidence intervals on dose–response parameters.** An EC50 without an
+interval is half an answer, and pharmacology is the use case most likely to
+adopt this. Needs the covariance matrix from the fit, or a profile-likelihood or
+bootstrap interval.
 
-### Explicit non-goals
+## Next, in rough priority order
 
-- Do not promise clinical/regulatory validation in the initial release.
-- Do not silently recommend a test based only on the number of groups.
-- Do not implement every advanced method before the data model and validation framework are stable.
-- Do not make cloud accounts required for analysis.
+1. **Dose–response parameter intervals**, plus comparison of fits by
+   extra-sum-of-squares F-test and AICc, and shared parameters across datasets.
+   This is the single biggest gap for the labs most likely to switch.
+2. **Repeated-measures ANOVA.** Friedman covers the non-parametric case; the
+   parametric one is a common request and needs a subject factor in the model.
+3. **Subcolumn replicates.** Technical replicates side by side within one
+   treatment column, as Prism does. A deep change to the data model, which is
+   why it has waited.
+4. **Analysis in a worker.** Everything currently recomputes on the main thread.
+   That is fine today — 100k rows analyse in about 100 ms — but a slow procedure
+   on a large table would freeze the interface.
+5. **Prism import.** Its CSV and XML exports, not the proprietary binary. Purely
+   an on-ramp for people with years of existing projects.
+6. **More figure control**: discontinuous axes, secondary Y axes, annotation
+   layers, per-point styling.
 
-## 3. Recommended architecture
+## Deliberately not doing
 
-Use a TypeScript frontend and a versioned, pure analysis core. Start as a static web app for fast iteration; package the same frontend as a Tauri desktop app once the workflow is stable. Tauri is a good fit for smaller cross-platform binaries and native file dialogs, while the pure core also permits browser use and automated testing.
+- **A cloud service.** Local-first is the point. Optional sync could come later,
+  but analysis will never require an account.
+- **Cloning Prism's interface or file format.** Independent implementation, open
+  format, and citations to the statistical literature.
+- **Claiming clinical or regulatory validation.** Agreement with R on a test
+  suite is not the same thing, and saying otherwise would be dishonest.
+- **Telemetry.** There is none, and none is planned.
+- **Every advanced method.** Breadth after depth. A wrong number in an obscure
+  procedure damages trust in every correct one beside it.
 
-```text
-UI (data grid, analysis wizard, graph editor, project navigator)
-        |
-Project store (commands, undo/redo, autosave, migrations)
-        |
-Domain model (tables -> analyses -> results -> graph layers)
-        |
-Analysis engine (pure functions; typed inputs/outputs; no UI)
-        |
-Numerical adapters (validated distributions, optimization, linear algebra)
-        |
-Export/import + renderer (CSV, JSON, SVG, PNG, PDF)
-```
+## Principles that have held up
 
-The long-term statistical engine should either use a carefully audited TypeScript/WASM numerical layer or call an embedded R runtime for methods where parity and peer review matter more than binary size. Whichever method is used, every procedure needs reference tests against trusted implementations and published examples.
+Worth recording, because each one caught something real:
 
-## 4. Data and project model
-
-Every project should be a ZIP container with a readable manifest:
-
-```text
-assayplot-project/
-  manifest.json       # schema version, app version, provenance
-  data/*.json          # immutable imported source plus derived tables
-  analyses/*.json      # method, options, exclusions, random seed
-  figures/*.json       # visual grammar and styling
-  exports/             # optional generated artifacts
-```
-
-Core entities:
-
-- `DataTable`: columns, roles, units, levels, missing-value rules, source hash.
-- `Transform`: explicit operation with inputs and output; never overwrite raw data.
-- `AnalysisSpec`: procedure, variables, paired/repeated structure, exclusions, correction, and options.
-- `AnalysisResult`: numeric estimates, intervals, test statistics, degrees of freedom, p-values, warnings, and software metadata.
-- `FigureSpec`: layers mapped to data/result fields, scales, annotations, dimensions, colors, and export settings.
-
-## 5. Statistical quality and safety
-
-Each method ships with:
-
-- An assumptions checklist.
-- A data-shape validator with actionable errors.
-- Unit tests for edge cases: missingness, ties, zero variance, tiny samples, unequal sizes, and extreme values.
-- Golden tests against R or another independently trusted reference.
-- A human-readable method description and citation.
-- Explicit distinction between exploratory and confirmatory analyses.
-
-Results must show effect size and confidence interval alongside p-values. Warnings should explain what failed and what the user can do, not merely display an error code.
-
-## 6. UX workstreams
-
-1. Research: interview 5–10 lab users; collect anonymized example workflows and current pain points.
-2. Information architecture: project navigator, data, analyses, results, figures, exports.
-3. Guided analysis: data-shape-first wizard with preview and assumptions.
-4. Graph editing: direct manipulation plus a precise properties panel.
-5. Reproducibility: visible lineage from each plotted mark/result back to source data.
-6. Accessibility: keyboard navigation, contrast, focus states, readable error messages, screen-reader labels.
-
-## 7. Delivery milestones
-
-- M0: repository, license decision, UX research, schema, CI, and demo dataset.
-- M1: current vertical slice—CSV, editable table, grouped plot, descriptive statistics, Welch t-test, JSON/SVG export.
-- M2: project persistence, undo/redo, data transformations, column/group/XY modes, robust import errors.
-- M3: analysis wizard, assumptions, ANOVA/nonparametric tests, multiple comparisons, golden statistical tests.
-- M4: graph editor, figure canvas, publication export, methods text, accessibility pass.
-- M5: desktop packaging, signed installers, crash-safe autosave, documentation, beta with real labs.
-
-## 8. Open-source and legal checklist
-
-- Use an OSI-approved application license; AGPL-3.0-or-later is appropriate if improvements to hosted versions should remain available.
-- Keep a third-party notices/SBOM file and verify every dependency license.
-- Never copy Prism UI text, artwork, proprietary algorithms, or file-format internals.
-- Use independent implementations and cite statistical references.
-- Add a “not medical advice / verify with a statistician” notice for early releases.
-- Publish reproducible example projects and benchmark reports.
-
-## 9. Definition of done for beta
-
-A new user can import a small experiment, understand the data shape, run a defensible analysis, see raw observations and uncertainty, edit a figure, reopen the project later, and export a vector figure plus a methods summary—without an internet connection or account. A statistician can inspect the exact inputs and settings and reproduce the result.
+- **The engine never touches the DOM.** Every result is a pure function of a
+  table and a specification, which is why 164 tests can run in Node in seconds.
+- **Validate against an independent implementation.** Ten defects have been
+  found by comparing against R; several had survived a fully green test suite.
+  Self-consistent tests confirm that code does what it does.
+- **Test what a procedure is not famous for.** The dose–response model had Top
+  and Bottom inverted. R² and the EC50 were both perfect. Only an assertion on
+  the labels caught it.
+- **Explain, never choose.** The app says why a method is unavailable and what
+  each one assumes, and refuses to pick a test for the user.
+- **An affordance is not part of the figure.** Editing placeholders and
+  selection outlines are stripped from every export.

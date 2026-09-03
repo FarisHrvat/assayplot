@@ -160,3 +160,27 @@ test('a figure whose table has non-numeric text does not throw', () => {
     assert.doesNotThrow(() => render(table, plotType), `${plotType} threw on messy data`);
   }
 });
+
+test('a bottom legend does not sit on top of the x-axis label', () => {
+  // With three or more series the legend moves below the plot. The axis label
+  // lives down there too, so one of them has to give way.
+  const table = demoProject().tables[0];
+  const figure = {
+    ...makeFigure('Three series', table.id, 'qq'),
+    style: defaultStyle({ xLabel: 'Normal quantile', showLegend: true }),
+  };
+  const markup = renderToStaticMarkup(createElement(Plot, { table, figure }));
+
+  const labelY = [...markup.matchAll(/<text[^>]*\by="([\d.]+)"[^>]*>Normal quantile</g)]
+    .map((match) => Number(match[1]));
+  const legendY = [...new Set(
+    [...markup.matchAll(/translate\([\d.-]+ ([\d.]+)\)/g)].map((match) => Number(match[1]))
+  )];
+
+  assert.equal(labelY.length, 1, 'expected exactly one x-axis label');
+  assert.ok(legendY.length > 0, 'expected a legend');
+  assert.ok(
+    Math.abs(labelY[0] - legendY[0]) > 12,
+    `axis label at ${labelY[0]} and legend at ${legendY[0]} overlap`
+  );
+});
