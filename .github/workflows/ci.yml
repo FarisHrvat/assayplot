@@ -46,15 +46,20 @@ jobs:
       - run: npm ci
       - name: Regenerate fixtures from R
         run: Rscript validation/generate/reference.R
-      - name: Fail if the committed fixtures no longer match R
+      - name: Fail if the committed values no longer match R
         run: |
-          if ! git diff --quiet validation/fixtures/; then
-            echo "::error::The committed fixtures differ from what R produces now."
-            echo "Either R changed, or the fixtures were edited by hand."
-            git diff --stat validation/fixtures/
+          # Compare the cases, not the R version stamp: a newer R on the runner
+          # than on the machine that committed the file is expected and fine.
+          # A changed *value* is not.
+          git show HEAD:validation/fixtures/reference.json | jq -S '.cases' > /tmp/committed.json
+          jq -S '.cases' validation/fixtures/reference.json > /tmp/regenerated.json
+          if ! diff -q /tmp/committed.json /tmp/regenerated.json >/dev/null; then
+            echo "::error::The committed fixtures no longer match what R produces."
+            echo "Either a procedure changed, or the fixtures were edited by hand."
+            diff /tmp/committed.json /tmp/regenerated.json | head -40
             exit 1
           fi
-          echo "Committed fixtures still match R."
+          echo "Committed values still match R $(Rscript -e 'cat(as.character(getRversion()))')."
       - name: Run the suite against the freshly generated fixtures
         run: npm test
 
@@ -63,7 +68,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        # 22.04 rather than latest: Ubuntu 24.04 cannot resolve
+        # libappindicator3-dev, which Tauri's Linux bundler still wants.
+        os: [macos-latest, ubuntu-22.04, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -76,12 +83,12 @@ jobs:
         with:
           workspaces: src-tauri
       - name: Linux build dependencies
-        if: matrix.os == 'ubuntu-latest'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
-            librsvg2-dev patchelf build-essential curl wget file libssl-dev \
-            libgtk-3-dev libayatana-appindicator3-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf \
+            build-essential curl wget file libssl-dev libgtk-3-dev \
+            libayatana-appindicator3-dev
       - run: npm ci
       # macOS is packaged separately: Tauri's DMG step drives Finder over
       # AppleScript, which no CI runner can satisfy.
@@ -90,7 +97,7 @@ jobs:
         run: npm run desktop:dmg
 
       - name: Build installers (Linux, Windows)
-        if: matrix.os != 'macos-latest'
+        if: runner.os != 'macOS'
         run: npm run desktop:build:installers
       - uses: actions/upload-artifact@v4
         with:

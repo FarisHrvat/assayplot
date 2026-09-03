@@ -266,9 +266,10 @@ add("grubbs", "grubbsTest", list(x = gr_x),
     list(statistic = gr_g, pValue = gr_p, value = gr_x[which.max(abs(gr_x - mean(gr_x)))]),
     "single most extreme value")
 
+# No timestamp: this file is committed and compared byte for byte, so anything
+# that changes between identical runs would make the drift check meaningless.
 out <- list(
   generatedBy = paste("R", getRversion()),
-  generatedAt = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
   note = "Golden values produced by R. Regenerate with validation/generate/reference.R.",
   cases = cases
 )

@@ -1,6 +1,5 @@
 {
   "generatedBy": "R 4.4.2",
-  "generatedAt": "2026-09-03T09:12:24+0200",
   "note": "Golden values produced by R. Regenerate with validation/generate/reference.R.",
   "cases": [
     {
