@@ -91,8 +91,14 @@ because a p-value alone does not tell you whether the difference matters.
 | Two factors | Two-way ANOVA with replication |
 | X versus Y | Pearson, Spearman, linear regression, dose–response (EC50/IC50) |
 | Survival | Kaplan–Meier with log-rank |
-| Counts | Chi-square (with Yates), Fisher's exact |
-| Assumptions | Shapiro–Wilk, Levene, Bartlett, Grubbs' outlier test |
+| Counts | Chi-square (with Yates), Fisher's exact, McNemar for paired counts |
+| Modelling | Logistic and Poisson regression, ANCOVA, mixed-effects models, GEE, Cox proportional hazards |
+| Multivariate | Principal components, hierarchical clustering with bootstrap support, ANOSIM, PLS-DA |
+| Agreement | Cohen's kappa, Bland–Altman, TOST for equivalence |
+| Meta-analysis | Cochran's Q with I², Mantel–Haenszel |
+| Genetics | Transmission disequilibrium, Mendelian randomisation |
+| Study design | Simon's two-stage design, the resource equation |
+| Assumptions | Shapiro–Wilk, D'Agostino–Pearson, Levene, Bartlett, Grubbs, ROUT |
 
 Each analysis writes a **methods sentence** you can paste into a manuscript. It
 names the test, the tails, the correction, and the software version.
@@ -147,15 +153,22 @@ Under *Assumptions and screening*:
   20 values the test has very little power, and AssayPlot says so. Look at a Q–Q
   plot as well.
 - **Levene and Bartlett** for equal variances. If they differ, prefer Welch.
-- **Grubbs'** for a single outlier. Removing a point because a test flagged it
-  changes the meaning of every p-value you compute afterwards. If you exclude
-  one, say so in the paper and give the reason.
+- **Grubbs'** for a single outlier, and **ROUT** when there may be several.
+  Grubbs finds one at a time, and a second outlier inflates the spread used to
+  judge the first, so a pair can hide each other. ROUT fits robustly first and
+  then controls the false discovery rate, so it can flag several at once.
+- Removing a point because a test flagged it changes the meaning of every
+  p-value you compute afterwards. A flagged point is a question about the
+  experiment, not permission to delete a number. If you exclude one, say so in
+  the paper and give the reason; better still, report the analysis with and
+  without it.
 
 ## Making a figure
 
-Press **Graph** on a table, or ＋ next to Figures. 23 plot types are grouped by
+Press **Graph** on a table, or ＋ next to Figures. 37 plot types are grouped by
 intent: comparing groups, distributions, X versus Y, matrices, parts of a whole,
-and survival.
+survival, agreement, fitted models, and multivariate. Hovering the ? beside the
+picker shows the selected plot drawn on data of the right shape.
 
 **Edit the figure by clicking it.**
 
@@ -216,8 +229,9 @@ Being explicit, so nothing surprises you at review time:
 - It does **not** pick a statistical test for you.
 - It does **not** give confidence intervals on dose–response parameters yet, or
   compare alternative models.
-- It has no three-way ANOVA, no repeated-measures ANOVA (Friedman covers the
-  non-parametric case), no mixed-effects models, and no Cox regression.
+- It has no three-way ANOVA, and no crossed random effects. Repeated measures
+  go through the mixed-effects model, which keeps a subject who missed one
+  measurement instead of dropping them.
 - It has no subcolumn replicates: use one row per replicate.
 - It is **not validated for clinical or regulatory use**. For anything
   consequential, confirm the result with a statistician.
