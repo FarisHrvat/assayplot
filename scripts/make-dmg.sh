@@ -13,7 +13,21 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUNDLE="$ROOT/src-tauri/target/release/bundle"
+
+# An optional Rust target triple, for cross-architecture builds. Without one,
+# Tauri writes to target/release; with one it writes to target/<triple>/release.
+TARGET="${1:-}"
+if [[ -n "$TARGET" ]]; then
+  BUNDLE="$ROOT/src-tauri/target/$TARGET/release/bundle"
+  case "$TARGET" in
+    aarch64-*) ARCH="aarch64" ;;
+    x86_64-*)  ARCH="x64" ;;
+    *)         ARCH="$TARGET" ;;
+  esac
+else
+  BUNDLE="$ROOT/src-tauri/target/release/bundle"
+  ARCH="$(uname -m)"
+fi
 APP="$BUNDLE/macos/AssayPlot.app"
 
 if [[ ! -d "$APP" ]]; then
@@ -22,7 +36,6 @@ if [[ ! -d "$APP" ]]; then
 fi
 
 VERSION="$(node -p "require('$ROOT/package.json').version")"
-ARCH="$(uname -m)"
 OUT="$BUNDLE/dmg/AssayPlot_${VERSION}_${ARCH}.dmg"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT

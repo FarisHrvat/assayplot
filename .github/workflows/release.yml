@@ -1,0 +1,147 @@
+name: Release
+
+# Builds every supported desktop target and attaches the installers to a draft
+# GitHub release. Triggered by pushing a version tag, or by hand.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v0.3.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: Verify before building anything
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run licenses
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  build:
+    name: ${{ matrix.label }}
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS (Apple Silicon)
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - label: macOS (Intel)
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - label: Windows (x64)
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - label: Linux (x64)
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      # Tauri needs a webkit2gtk development environment on Linux. 22.04 carries
+      # webkit2gtk-4.1, which Tauri 2 expects.
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            build-essential curl wget file libssl-dev libgtk-3-dev \
+            libayatana-appindicator3-dev
+
+      - run: npm ci
+
+      # macOS is packaged by our own script: Tauri's DMG step drives Finder over
+      # AppleScript, which no CI runner can satisfy.
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          npx tauri build --target ${{ matrix.target }} --bundles app
+          bash scripts/make-dmg.sh ${{ matrix.target }}
+
+      - name: Build (Windows and Linux)
+        if: runner.os != 'macOS'
+        run: npx tauri build --target ${{ matrix.target }}
+
+      - name: Collect artefacts
+        shell: bash
+        run: |
+          mkdir -p out
+          BASE="src-tauri/target/${{ matrix.target }}/release/bundle"
+          find "$BASE" \( -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' \
+            -o -name '*.rpm' -o -name '*.msi' -o -name '*-setup.exe' \) \
+            -exec cp {} out/ \;
+          ls -la out/
+
+      - name: Checksums
+        shell: bash
+        run: |
+          cd out
+          if command -v sha256sum >/dev/null; then sha256sum * > SHA256SUMS.txt
+          else shasum -a 256 * > SHA256SUMS.txt; fi
+          cat SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assayplot-${{ matrix.target }}
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    name: Draft the release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Flatten
+        run: |
+          mkdir -p release
+          find artifacts -type f ! -name 'SHA256SUMS.txt' -exec cp {} release/ \;
+          cd release && sha256sum * > SHA256SUMS.txt && ls -la
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: AssayPlot ${{ github.event.inputs.tag || github.ref_name }}
+          files: release/*
+          body: |
+            ## Installing
+
+            These builds are **not code-signed**, so your system will warn you
+            on first launch.
+
+            - **macOS** — right-click the app and choose *Open*, then *Open*
+              again. Apple Silicon and Intel builds are separate; take the one
+              matching your Mac.
+            - **Windows** — SmartScreen shows "Windows protected your PC".
+              Choose *More info* → *Run anyway*.
+            - **Linux** — `chmod +x` the AppImage, or install the `.deb`.
+
+            Verify your download against `SHA256SUMS.txt`.
