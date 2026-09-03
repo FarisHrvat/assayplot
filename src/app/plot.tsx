@@ -27,10 +27,6 @@ import {
   xyPairs,
 } from './model.ts';
 
-// ---------------------------------------------------------------------------
-// palettes
-// ---------------------------------------------------------------------------
-
 export const PALETTES: Record<string, string[]> = {
   // Default: distinguishable in greyscale and under common colour-vision deficiency.
   assayplot: ['#0C6259', '#C2703D', '#3C5A99', '#7A5195', '#68843B', '#A33B4E', '#2C7A6B', '#8A5A2B'],
@@ -51,20 +47,12 @@ function colorFor(style: FigureStyle, columnId: string, index: number): string {
   return style.seriesColors[columnId] ?? palette[index % palette.length];
 }
 
-// ---------------------------------------------------------------------------
-// selection
-// ---------------------------------------------------------------------------
-
 export type Selected =
   | { kind: 'title' }
   | { kind: 'xLabel' }
   | { kind: 'yLabel' }
   | { kind: 'series'; columnId: string; index: number }
   | null;
-
-// ---------------------------------------------------------------------------
-// geometry
-// ---------------------------------------------------------------------------
 
 /** Deterministic jitter: seeded from the mark's identity so it never moves. */
 function jitter(seed: number, spread: number): number {
@@ -137,10 +125,6 @@ function formatTick(value: number): string {
 
 const MARGIN = { top: 40, right: 26, bottom: 58, left: 66 };
 
-// ---------------------------------------------------------------------------
-// plot catalogue
-// ---------------------------------------------------------------------------
-
 export type PlotGroup = 'Compare groups' | 'Distribution' | 'X versus Y' | 'Matrix' | 'Parts of a whole' | 'Survival';
 
 export interface PlotKind {
@@ -192,10 +176,6 @@ export function plotsForShape(shape: TableShape): PlotKind[] {
 
 const XY_PLOTS: PlotType[] = ['scatter', 'line', 'area', 'step', 'bubble'];
 const DISTRIBUTION_PLOTS: PlotType[] = ['histogram', 'density', 'ecdf', 'qq'];
-
-// ---------------------------------------------------------------------------
-// the component
-// ---------------------------------------------------------------------------
 
 export interface PlotProps {
   table: DataTable;
@@ -266,8 +246,6 @@ export function Plot(props: PlotProps) {
   if (plotType === 'heatmap' || plotType === 'correlation') return canvas(<MatrixPlot {...shared} />);
   if (plotType === 'pie' || plotType === 'donut') return canvas(<PiePlot {...shared} />);
   if (DISTRIBUTION_PLOTS.includes(plotType)) return canvas(<DistributionPlot {...shared} />);
-
-  // ------------------------------------------------------------- XY plots
   if (XY_PLOTS.includes(plotType)) {
     if (table.shape !== 'xy') {
       return <EmptyPlot width={width} height={height} message="This plot needs an XY table. Switch the table shape to XY." />;
@@ -357,8 +335,6 @@ export function Plot(props: PlotProps) {
       </>
     );
   }
-
-  // ----------------------------------------------------------- group plots
   const columns = valueColumns(table);
   const groups = columns.map((column, index) => {
     const values = columnValues(table, column.id);
@@ -508,10 +484,6 @@ export function Plot(props: PlotProps) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// editable text
-// ---------------------------------------------------------------------------
-
 /**
  * A text element that can be selected and edited on the figure itself.
  * While editing it swaps to an HTML input inside a foreignObject; the export
@@ -609,10 +581,6 @@ function XLabelText(props: any) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// axes and grid
-// ---------------------------------------------------------------------------
-
 function Grid({ style, xTicks, yTicks, xScale, yScale, plotLeft, plotRight, plotTop, plotBottom }: any) {
   const showHorizontal = style.grid === 'horizontal' || style.grid === 'both';
   const showVertical = style.grid === 'vertical' || style.grid === 'both';
@@ -676,10 +644,6 @@ function XAxisNumeric(props: any) {
     </g>
   );
 }
-
-// ---------------------------------------------------------------------------
-// marks
-// ---------------------------------------------------------------------------
 
 function BoxMark({ center, width, summary, color, yScale }: any) {
   const { q1, q3, median, min, max } = summary;
@@ -760,10 +724,6 @@ function PairedLines({ table, groups, centerOf, yScale }: any) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// distribution plots
-// ---------------------------------------------------------------------------
-
 function DistributionPlot(props: any) {
   const { table, figure, plotLeft, plotRight, plotTop, plotBottom, font, selected, onSelect } = props;
   const style: FigureStyle = figure.style;
@@ -778,8 +738,6 @@ function DistributionPlot(props: any) {
     ? <Legend items={series.map((entry) => ({ label: entry.column.name, color: entry.color }))}
         placement={props.legendPlacement} font={font} />
     : null;
-
-  // ------------------------------------------------------------------ Q-Q
   if (plotType === 'qq') {
     const points = series.flatMap((entry) => {
       const sorted = [...entry.values].sort((a, b) => a - b);
@@ -826,8 +784,6 @@ function DistributionPlot(props: any) {
   const high = style.xMax ?? Math.max(...allValues);
   const xScale = makeScale(low, high, plotLeft, plotRight);
   const xTicks = niceTicks(low, high);
-
-  // ----------------------------------------------------------------- ECDF
   if (plotType === 'ecdf') {
     const yScale = makeScale(0, 1, plotBottom, plotTop);
     const yTicks = [0, 0.25, 0.5, 0.75, 1];
@@ -856,8 +812,6 @@ function DistributionPlot(props: any) {
       </>
     );
   }
-
-  // ---------------------------------------------------- histogram, density
   const binCount = Math.max(3, Math.min(60, style.bins));
   const binWidth = (high - low) / binCount || 1;
 
@@ -927,10 +881,6 @@ function DistributionPlot(props: any) {
     </>
   );
 }
-
-// ---------------------------------------------------------------------------
-// multi-panel layout
-// ---------------------------------------------------------------------------
 
 export interface LayoutPanel {
   figure: Figure;
@@ -1006,10 +956,6 @@ export function LayoutFigure({
     </svg>
   );
 }
-
-// ---------------------------------------------------------------------------
-// survival
-// ---------------------------------------------------------------------------
 
 /**
  * Kaplan-Meier step curves, one per group, with censoring ticks. Survival is
@@ -1106,10 +1052,6 @@ function SurvivalPlot(props: any) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// matrices
-// ---------------------------------------------------------------------------
-
 /** Green-white-red diverging ramp, symmetric about zero. */
 function divergingColor(t: number): string {
   const clamped = Math.max(-1, Math.min(1, t));
@@ -1136,10 +1078,13 @@ function MatrixPlot(props: any) {
     for (let i = 0; i < k; i += 1) {
       for (let j = 0; j < k; j += 1) {
         const n = Math.min(series[i].length, series[j].length);
-        let r = NaN;
-        if (n >= 3) {
-          try { r = stats.pearsonCorrelation(series[i].slice(0, n), series[j].slice(0, n)).r; } catch { r = NaN; }
-        }
+        const a = series[i].slice(0, n);
+        const b = series[j].slice(0, n);
+        // Correlation is undefined when either column is constant, which is
+        // common enough in a matrix that it is worth checking rather than
+        // catching.
+        const defined = n >= 3 && stats.variance(a) > 0 && stats.variance(b) > 0;
+        const r = defined ? stats.pearsonCorrelation(a, b).r : NaN;
         cells.push(
           <g key={`${i}-${j}`}>
             <rect x={plotLeft + j * cell} y={plotTop + i * cell} width={cell - 1} height={cell - 1}
@@ -1205,10 +1150,6 @@ function MatrixPlot(props: any) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// parts of a whole
-// ---------------------------------------------------------------------------
-
 function PiePlot(props: any) {
   const { table, figure, plotLeft, plotRight, plotTop, plotBottom, font, selected, onSelect } = props;
   const style: FigureStyle = figure.style;
@@ -1264,10 +1205,6 @@ function PiePlot(props: any) {
     </>
   );
 }
-
-// ---------------------------------------------------------------------------
-// annotations
-// ---------------------------------------------------------------------------
 
 /**
  * Significance brackets, stacked so they never collide. Each bracket sits above

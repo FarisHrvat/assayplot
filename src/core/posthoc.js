@@ -1,32 +1,18 @@
-// Post-hoc comparison procedures and the studentized range distribution.
-//
-// Written in expanded form: these are checked against R in validation/.
+// Post-hoc comparisons and the studentized range distribution they rest on.
+// Checked against R in validation/.
 
 import { mean, variance, clean } from './stats.js';
 import { normalCdf as normalCdfPrecise } from './diagnostics.js';
-
-// ---------------------------------------------------------------------------
-// standard normal
-// ---------------------------------------------------------------------------
 
 function normalPdf(x) {
   return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
 }
 
-/**
- * Shared with diagnostics.js: derived from the incomplete gamma rather than a
- * polynomial erf. The polynomial version put an 8e-9 floor under every
- * studentized range value, which no amount of quadrature could get past.
- */
-function normalCdf(x) {
-  return normalCdfPrecise(x);
-}
+// A polynomial erf here used to put an 8e-9 floor under every studentized
+// range value that no amount of quadrature could get past.
+const normalCdf = normalCdfPrecise;
 
-// ---------------------------------------------------------------------------
-// Gauss-Legendre quadrature
-// ---------------------------------------------------------------------------
-
-/** Nodes and weights on [-1, 1], computed once by Newton iteration on P_n. */
+// Nodes and weights on [-1, 1], by Newton iteration on the Legendre polynomial.
 function legendre(n) {
   const nodes = new Float64Array(n);
   const weights = new Float64Array(n);
@@ -66,7 +52,6 @@ function legendre(n) {
 const GL = legendre(32);
 const PANELS = 4;
 
-/** Integrates f over [a, b] by splitting into `panels` Gauss-Legendre panels. */
 function integrate(f, a, b, panels = 8) {
   const step = (b - a) / panels;
   let total = 0;
@@ -81,35 +66,25 @@ function integrate(f, a, b, panels = 8) {
   return total * ((b - a) / panels) / 2;
 }
 
-// ---------------------------------------------------------------------------
-// studentized range
-// ---------------------------------------------------------------------------
-
-/**
- * P(W < w) for the range of k independent standard normals.
- *
- *   W(w, k) = k integral phi(z) [Phi(z) - Phi(z - w)]^(k-1) dz
- */
+// P(W < w) for the range of k standard normals:
+//   k * integral phi(z) [Phi(z) - Phi(z - w)]^(k-1) dz
 function rangeCdf(w, k) {
   if (w <= 0) return 0;
   return k * integrate((z) => normalPdf(z) * Math.pow(normalCdf(z) - normalCdf(z - w), k - 1), -8.5, 8.5, PANELS);
 }
 
-/**
- * Studentized range CDF: P(Q < q) for k means and df degrees of freedom, as in
- * R's ptukey. The outer integral mixes the range over the chi distribution of
- * the pooled standard error.
- */
+// P(Q < q) for k means on df degrees of freedom, as R's ptukey. The outer
+// integral mixes the range over the chi distribution of the pooled standard
+// error.
 export function studentizedRangeCdf(q, k, df) {
   if (!(q > 0)) return 0;
   if (!Number.isFinite(df) || df > 25000) return rangeCdf(q, k);
 
-  // Density of s = sqrt(chi2_df / df), the scale factor on the range.
+  // s = sqrt(chi2_df / df) scales the range; it concentrates near 1.
   const halfDf = df / 2;
   const logConstant = halfDf * Math.log(halfDf) - lgamma(halfDf) + Math.log(2);
   const density = (s) => Math.exp(logConstant + (df - 1) * Math.log(s) - (halfDf * s * s));
 
-  // s concentrates near 1; six standard errors either side covers it.
   const spread = 6 / Math.sqrt(2 * df);
   const low = Math.max(1e-8, 1 - spread * 1.8);
   const high = 1 + spread * 2.2;
@@ -151,14 +126,8 @@ export function studentizedRangeP(q, k, df) {
   return Math.min(1, tail);
 }
 
-// ---------------------------------------------------------------------------
-// Tukey HSD
-// ---------------------------------------------------------------------------
-
-/**
- * Tukey's honestly significant difference: all pairwise comparisons with the
- * family-wise error rate controlled exactly, assuming equal variances.
- */
+// All pairwise comparisons with the family-wise error rate controlled exactly,
+// assuming equal variances.
 export function tukeyHSD(groups, labels = []) {
   const arrays = groups.map(clean).filter((values) => values.length > 1);
   if (arrays.length < 3) throw new Error('Tukey HSD needs at least three groups with two or more values.');
@@ -169,9 +138,8 @@ export function tukeyHSD(groups, labels = []) {
   const meanSquareWithin =
     arrays.reduce((sum, values) => sum + (values.length - 1) * variance(values), 0) / dfWithin;
 
-  // The studentized range quantile depends only on k and dfWithin, and each
-  // evaluation is a double numerical integration, so it is computed once for
-  // the whole family rather than once per pair.
+  // Each evaluation is a double numerical integration and the value depends
+  // only on k and dfWithin, so it is computed once for the whole family.
   const critical = studentizedRangeQuantile(0.95, k, dfWithin);
 
   const comparisons = [];
@@ -238,14 +206,8 @@ export function studentizedRangeQuantile(probability, k, df) {
   return value;
 }
 
-// ---------------------------------------------------------------------------
-// Dunn's test
-// ---------------------------------------------------------------------------
-
-/**
- * Dunn's test: the rank-based post-hoc that belongs after Kruskal-Wallis.
- * Uses the pooled ranking with a tie correction, as in the dunn.test package.
- */
+// The rank-based post-hoc that belongs after Kruskal-Wallis: pooled ranking
+// with a tie correction, as in the dunn.test package.
 export function dunnTest(groups, labels = [], adjust = (p) => p) {
   const arrays = groups.map(clean).filter((values) => values.length > 0);
   if (arrays.length < 3) throw new Error("Dunn's test needs at least three groups.");
@@ -256,7 +218,6 @@ export function dunnTest(groups, labels = [], adjust = (p) => p) {
   });
   pooled.sort((a, b) => a.value - b.value);
 
-  // Average ranks, recording tie-group sizes for the variance correction.
   const tieSizes = [];
   for (let i = 0; i < pooled.length;) {
     let j = i + 1;
@@ -306,19 +267,10 @@ export function dunnTest(groups, labels = [], adjust = (p) => p) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// comparisons against a single control
-// ---------------------------------------------------------------------------
-
-/**
- * Every group against one control, with Sidak's correction for the number of
- * comparisons made.
- *
- * This is deliberately NOT called Dunnett's test. Dunnett uses the joint
- * multivariate-t distribution of the comparisons, which is slightly less
- * conservative; Sidak treats them as independent. The distinction is stated in
- * the result so nobody reports the wrong procedure.
- */
+// Every group against one control, Sidak-corrected. Deliberately not called
+// Dunnett's test: Dunnett uses the joint multivariate-t of the comparisons and
+// is slightly less conservative. The result says so, so nobody reports the
+// wrong procedure.
 export function versusControl(groups, controlIndex, labels = [], tTest) {
   const arrays = groups.map(clean);
   if (arrays.length < 2) throw new Error('Comparing against a control needs at least two groups.');

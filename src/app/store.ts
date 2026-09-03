@@ -486,10 +486,6 @@ export const useStore = create<State>((set, get) => ({
   },
 }));
 
-// ---------------------------------------------------------------------------
-// derived results
-// ---------------------------------------------------------------------------
-
 /**
  * Memoised analysis results. The cache key is the identity of the table and the
  * analysis spec, both of which are replaced on every edit, so a change to one
@@ -517,11 +513,6 @@ export function tableById(project: Project, id: string): DataTable | undefined {
 export function analysisById(project: Project, id: string | null): Analysis | undefined {
   return id ? project.analyses.find((analysis) => analysis.id === id) : undefined;
 }
-
-
-// ---------------------------------------------------------------------------
-// autosave
-// ---------------------------------------------------------------------------
 
 /**
  * Writes a recovery snapshot shortly after the project stops changing. Purely a

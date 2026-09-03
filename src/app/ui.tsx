@@ -44,10 +44,6 @@ import {
   tableToCsv,
 } from './io.ts';
 
-// ===========================================================================
-// error boundary
-// ===========================================================================
-
 interface BoundaryState { error: Error | null }
 
 /**
@@ -98,10 +94,6 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
   }
 }
 
-// ===========================================================================
-// problems
-// ===========================================================================
-
 function ProblemPanel({ problem, onDismiss }: { problem: Problem; onDismiss: () => void }) {
   return (
     <div className="problem" role="alert">
@@ -125,10 +117,6 @@ function ProblemPanel({ problem, onDismiss }: { problem: Problem; onDismiss: () 
     </div>
   );
 }
-
-// ===========================================================================
-// app
-// ===========================================================================
 
 export function App() {
   const selection = useStore((s) => s.selection);
@@ -218,10 +206,6 @@ export function App() {
     </div>
   );
 }
-
-// ===========================================================================
-// toolbar
-// ===========================================================================
 
 function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
   const project = useStore((s) => s.project);
@@ -389,10 +373,6 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
   );
 }
 
-// ===========================================================================
-// navigator
-// ===========================================================================
-
 function Navigator() {
   const project = useStore((s) => s.project);
   const selection = useStore((s) => s.selection);
@@ -524,10 +504,6 @@ function Section({ title, action, children }: { title: string; action: React.Rea
     </section>
   );
 }
-
-// ===========================================================================
-// data table
-// ===========================================================================
 
 /** Short badges shown under a column heading when the shape gives it a role. */
 const ROLE_LABEL: Record<string, string> = {
@@ -828,10 +804,6 @@ function ColumnSummary({ table }: { table: DataTable }) {
   );
 }
 
-// ===========================================================================
-// analysis
-// ===========================================================================
-
 function AnalysisView({ id }: { id: string }) {
   const project = useStore((s) => s.project);
   const analysis = analysisById(project, id);
@@ -1082,10 +1054,6 @@ function AnalysisView({ id }: { id: string }) {
     </div>
   );
 }
-
-// ===========================================================================
-// figure
-// ===========================================================================
 
 function FigureView({ id }: { id: string }) {
   const project = useStore((s) => s.project);
@@ -1379,10 +1347,6 @@ function FigureView({ id }: { id: string }) {
   );
 }
 
-// ===========================================================================
-// multi-panel layout
-// ===========================================================================
-
 function LayoutView({ id }: { id: string }) {
   const project = useStore((s) => s.project);
   const layout = project.layouts.find((entry) => entry.id === id);
@@ -1525,10 +1489,6 @@ function LayoutView({ id }: { id: string }) {
   );
 }
 
-// ===========================================================================
-// help
-// ===========================================================================
-
 function HelpView() {
   const [openMethod, setOpenMethod] = useState<string | null>(null);
 
@@ -1634,10 +1594,6 @@ function HelpView() {
     </div>
   );
 }
-
-// ===========================================================================
-// shared
-// ===========================================================================
 
 function NothingSelected() {
   const addTable = useStore((s) => s.addTable);

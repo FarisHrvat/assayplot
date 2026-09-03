@@ -16,10 +16,6 @@ import {
   newId,
 } from './model.ts';
 
-// ---------------------------------------------------------------------------
-// project container
-// ---------------------------------------------------------------------------
-
 export function serializeProject(project: Project): Uint8Array {
   const pretty = (value: unknown) => strToU8(JSON.stringify(value, null, 2));
 
@@ -53,17 +49,18 @@ export function serializeProject(project: Project): Uint8Array {
 }
 
 export function deserializeProject(bytes: Uint8Array): Project {
-  let entries: Record<string, Uint8Array>;
-  try {
-    entries = unzipSync(bytes);
-  } catch {
-    // A plain .json project from the older prototype is still worth accepting.
-    try {
-      return migrate(JSON.parse(strFromU8(bytes)));
-    } catch {
-      throw new Error('This file is not a AssayPlot project.');
+  // Every ZIP starts "PK". Anything else is either the older prototype's plain
+  // JSON project or not a project at all.
+  const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
+  if (!isZip) {
+    const text = strFromU8(bytes);
+    if (!text.trimStart().startsWith('{')) {
+      throw new Error('This file is not an AssayPlot project. A project is a .assayplot file; use Import data for spreadsheets.');
     }
+    return migrate(JSON.parse(text));
   }
+
+  const entries = unzipSync(bytes);
 
   const read = (path: string) => JSON.parse(strFromU8(entries[path]));
   if (!entries['manifest.json']) throw new Error('The project is missing its manifest.');
@@ -176,10 +173,6 @@ export function migrate(raw: any): Project {
     })),
   };
 }
-
-// ---------------------------------------------------------------------------
-// delimited text
-// ---------------------------------------------------------------------------
 
 export function detectDelimiter(text: string): string {
   const line = text.split(/\r?\n/).find((candidate) => candidate.trim().length) ?? '';
@@ -339,10 +332,6 @@ export function tableToCsv(table: DataTable): string {
   }
   return lines.join('\n');
 }
-
-// ---------------------------------------------------------------------------
-// downloads
-// ---------------------------------------------------------------------------
 
 export function download(filename: string, data: BlobPart, mime: string): void {
   const blob = new Blob([data], { type: mime });

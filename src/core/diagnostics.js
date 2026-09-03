@@ -1,13 +1,7 @@
-// Assumption checks and outlier screening.
-//
-// These are the tests a reviewer asks for: is it normal, are the variances
+// The assumption checks a reviewer asks for: is it normal, are the variances
 // equal, is that one point an outlier. Checked against R in validation/.
 
 import { mean, variance, clean, studentTCdf, studentTQuantile } from './stats.js';
-
-// ---------------------------------------------------------------------------
-// normal quantile (Wichura AS 241), accurate to about 1e-16
-// ---------------------------------------------------------------------------
 
 export function normalQuantile(p) {
   if (p <= 0) return -Infinity;
@@ -34,28 +28,16 @@ export function normalQuantile(p) {
   return q < 0 ? -value : value;
 }
 
-/**
- * Derived from the incomplete gamma rather than a polynomial erf: the
- * Abramowitz-Stegun approximation has 1.5e-7 *absolute* error, which destroys
- * relative accuracy exactly where a normality p-value matters.
- */
+// From the incomplete gamma, not a polynomial erf: Abramowitz-Stegun carries
+// 1.5e-7 absolute error, which destroys relative accuracy in the tail.
 export function normalCdf(x) {
   if (!Number.isFinite(x)) return x > 0 ? 1 : 0;
   const tail = 0.5 * regularizedGammaQ(0.5, (x * x) / 2);
   return x >= 0 ? 1 - tail : tail;
 }
 
-// ---------------------------------------------------------------------------
-// Shapiro-Wilk (Royston 1995, AS R94)
-// ---------------------------------------------------------------------------
-
-/**
- * The normality test most reviewers expect. Valid for 3 <= n <= 5000.
- *
- * Note the direction of the question: a large p-value is not evidence of
- * normality, only an absence of evidence against it. With small lab samples
- * this test has very little power, which the result states plainly.
- */
+// Valid for 3 <= n <= 5000. A large p-value is not evidence of normality, only
+// an absence of evidence against it, which the result says plainly.
 export function shapiroWilk(values) {
   const x = clean(values).sort((a, b) => a - b);
   const n = x.length;
@@ -73,7 +55,7 @@ export function shapiroWilk(values) {
   let phi;
 
   if (n > 5) {
-    // Royston's correction adds a polynomial in 1/sqrt(n) to c[n].
+    // Royston's correction: a polynomial in 1/sqrt(n) added to c[n].
     a[n - 1] = c[n - 1] + 0.221157 * rsn - 0.147981 * rsn ** 2 - 2.071190 * rsn ** 3 + 4.434685 * rsn ** 4 - 2.706056 * rsn ** 5;
     a[n - 2] = c[n - 2] + 0.042981 * rsn - 0.293762 * rsn ** 2 - 1.752461 * rsn ** 3 + 5.682633 * rsn ** 4 - 3.582633 * rsn ** 5;
     i1 = 2;
@@ -125,11 +107,7 @@ export function shapiroWilk(values) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// D'Agostino-Pearson K^2
-// ---------------------------------------------------------------------------
-
-/** Combines skewness and kurtosis into an omnibus normality test. Needs n >= 20. */
+// Skewness and kurtosis combined into an omnibus test. Needs n >= 20.
 export function dagostinoPearson(values) {
   const x = clean(values);
   const n = x.length;
@@ -177,14 +155,8 @@ export function dagostinoPearson(values) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// equality of variance
-// ---------------------------------------------------------------------------
-
-/**
- * Levene's test on deviations from the group median (the Brown-Forsythe
- * variant), which is the robust form and R's default in car::leveneTest.
- */
+// On deviations from the group median: the Brown-Forsythe variant, which is
+// the robust form and what car::leveneTest defaults to.
 export function leveneTest(groups) {
   const arrays = groups.map(clean).filter((values) => values.length > 1);
   if (arrays.length < 2) throw new Error("Levene's test needs at least two groups.");
@@ -227,7 +199,7 @@ export function leveneTest(groups) {
   };
 }
 
-/** Bartlett's test. More powerful than Levene under normality, less robust to departures from it. */
+// More powerful than Levene under normality, less robust to departures from it.
 export function bartlettTest(groups) {
   const arrays = groups.map(clean).filter((values) => values.length > 1);
   if (arrays.length < 2) throw new Error("Bartlett's test needs at least two groups.");
@@ -252,11 +224,7 @@ export function bartlettTest(groups) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// outliers
-// ---------------------------------------------------------------------------
-
-/** Grubbs' test for the single most extreme value in a roughly normal sample. */
+// The single most extreme value in a roughly normal sample.
 export function grubbsTest(values) {
   const x = clean(values);
   const n = x.length;
@@ -276,7 +244,6 @@ export function grubbsTest(values) {
     }
   });
 
-  // Two-sided critical value inverted into a p-value.
   const df = n - 2;
   const tSquared = (statistic ** 2 * df) / ((n - 1) ** 2 - n * statistic ** 2);
   const t = Math.sqrt(Math.max(0, tSquared));
@@ -295,11 +262,6 @@ export function grubbsTest(values) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// one-sample comparison
-// ---------------------------------------------------------------------------
-
-/** Tests a sample mean against a hypothesised value. */
 export function oneSampleTTest(values, hypothesised = 0) {
   const x = clean(values);
   const n = x.length;
@@ -328,10 +290,6 @@ export function oneSampleTTest(values, hypothesised = 0) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// shared tail helpers
-// ---------------------------------------------------------------------------
-
 function fUpperTail(f, df1, df2) {
   if (!Number.isFinite(f) || f <= 0) return 1;
   return incompleteBetaTail(df2 / (df2 + df1 * f), df2 / 2, df1 / 2);
@@ -342,7 +300,7 @@ function chiSquareUpperTail(value, df) {
   return regularizedGammaQ(df / 2, value / 2);
 }
 
-// Local copies so this module does not depend on stats.js internals.
+// Local copies: stats.js does not export these.
 function incompleteBetaTail(x, a, b) {
   if (x <= 0) return 0;
   if (x >= 1) return 1;

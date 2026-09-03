@@ -3,41 +3,44 @@ import { useEffect, useState } from 'react';
 export type Theme = 'system' | 'light' | 'dark';
 
 const KEY = 'assayplot.theme';
+const isTheme = (value: unknown): value is Theme =>
+  value === 'light' || value === 'dark' || value === 'system';
 
-function stored(): Theme {
+// localStorage throws outright in a private window or with site data blocked,
+// so both accesses go through here. Forgetting the preference is survivable.
+function remember(theme: Theme) {
   try {
-    const value = localStorage.getItem(KEY);
-    if (value === 'light' || value === 'dark' || value === 'system') return value;
+    localStorage.setItem(KEY, theme);
   } catch {
-    // Private windows and locked-down browsers refuse localStorage entirely.
+    /* not remembered */
   }
-  return 'system';
 }
 
-function apply(theme: Theme) {
-  const root = document.documentElement;
-  if (theme === 'system') root.removeAttribute('data-theme');
-  else root.setAttribute('data-theme', theme);
+function recall(): Theme {
+  try {
+    const value = localStorage.getItem(KEY);
+    return isTheme(value) ? value : 'system';
+  } catch {
+    return 'system';
+  }
 }
 
 /**
- * Follows the operating system unless the user has chosen otherwise. The choice
- * is a stamp on the root element; the palette itself lives in styles.css, so
- * nothing here knows what any colour is.
+ * Follows the operating system unless the user chooses otherwise. The choice is
+ * a stamp on the root element; the palette lives in styles.css, so nothing here
+ * knows what any colour is.
  */
 export function useTheme(): [Theme, (next: Theme) => void, 'light' | 'dark'] {
-  const [theme, setTheme] = useState<Theme>(stored);
+  const [theme, setTheme] = useState<Theme>(recall);
   const [systemIsDark, setSystemIsDark] = useState(
     () => typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches
   );
 
   useEffect(() => {
-    apply(theme);
-    try {
-      localStorage.setItem(KEY, theme);
-    } catch {
-      // Not being able to remember the choice is survivable.
-    }
+    const root = document.documentElement;
+    if (theme === 'system') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', theme);
+    remember(theme);
   }, [theme]);
 
   useEffect(() => {
@@ -48,6 +51,5 @@ export function useTheme(): [Theme, (next: Theme) => void, 'light' | 'dark'] {
     return () => query.removeEventListener('change', onChange);
   }, []);
 
-  const resolved = theme === 'system' ? (systemIsDark ? 'dark' : 'light') : theme;
-  return [theme, setTheme, resolved];
+  return [theme, setTheme, theme === 'system' ? (systemIsDark ? 'dark' : 'light') : theme];
 }

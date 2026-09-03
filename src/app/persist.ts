@@ -1,116 +1,94 @@
-// Crash-safe autosave.
-//
-// The project is written to IndexedDB a moment after every change, so closing
-// the tab, a crash, or a power cut costs at most a few seconds of work. This is
-// a safety net, not a filing system: the user's real save is still an explicit
-// `.assayplot` file, and the recovery snapshot is cleared once they save.
-//
-// IndexedDB rather than localStorage because a project with a large imported
-// table will exceed the ~5 MB localStorage quota, and exceeding it throws.
-
 import { type Project } from './model.ts';
 import { migrate } from './io.ts';
 
 const DATABASE = 'assayplot';
 const STORE = 'recovery';
 const KEY = 'current';
-const VERSION = 1;
 
 export interface Snapshot {
   project: Project;
   savedAt: string;
-  /** False once the user has saved to a real file, so we stop offering it. */
   dirty: boolean;
 }
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DATABASE, VERSION);
+    const request = indexedDB.open(DATABASE, 1);
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(STORE)) {
         request.result.createObjectStore(STORE);
       }
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('IndexedDB is unavailable.'));
+    request.onerror = () => reject(request.error);
   });
 }
 
-async function withStore<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  const database = await openDatabase();
+/**
+ * The single point where storage failure is handled. A private window, a full
+ * disk, or a browser set to block site data all make IndexedDB throw, and none
+ * of them should stop the app working — they only cost the safety net.
+ */
+async function withStore<T>(
+  mode: IDBTransactionMode,
+  run: (store: IDBObjectStore) => IDBRequest<T>
+): Promise<{ ok: true; value: T } | { ok: false }> {
+  let database: IDBDatabase;
   try {
-    return await new Promise<T>((resolve, reject) => {
-      const transaction = database.transaction(STORE, mode);
-      const request = run(transaction.objectStore(STORE));
+    database = await openDatabase();
+    const value = await new Promise<T>((resolve, reject) => {
+      const request = run(database.transaction(STORE, mode).objectStore(STORE));
       request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed.'));
+      request.onerror = () => reject(request.error);
     });
-  } finally {
     database.close();
+    return { ok: true, value };
+  } catch {
+    return { ok: false };
   }
 }
 
-/**
- * Every storage call is wrapped: a private window, a full disk, or a browser
- * with site data blocked must degrade to "no autosave", never to a broken app.
- */
 export async function writeSnapshot(project: Project, dirty: boolean): Promise<boolean> {
-  try {
-    const snapshot: Snapshot = { project, savedAt: new Date().toISOString(), dirty };
-    await withStore('readwrite', (store) => store.put(snapshot, KEY) as IDBRequest<any>);
-    return true;
-  } catch {
-    return false;
-  }
+  const snapshot: Snapshot = { project, savedAt: new Date().toISOString(), dirty };
+  const result = await withStore('readwrite', (store) => store.put(snapshot, KEY) as IDBRequest<unknown>);
+  return result.ok;
 }
 
 export async function readSnapshot(): Promise<Snapshot | null> {
-  try {
-    const raw = await withStore<Snapshot | undefined>('readonly', (store) => store.get(KEY));
-    if (!raw?.project) return null;
-    // A snapshot written by an older version still has to open.
-    return { ...raw, project: migrate(raw.project) };
-  } catch {
-    return null;
-  }
+  const result = await withStore<Snapshot | undefined>('readonly', (store) => store.get(KEY));
+  if (!result.ok || !result.value?.project) return null;
+  return { ...result.value, project: migrate(result.value.project) };
 }
 
 export async function clearSnapshot(): Promise<void> {
-  try {
-    await withStore('readwrite', (store) => store.delete(KEY) as IDBRequest<any>);
-  } catch {
-    // Nothing to do: a snapshot we cannot clear is harmless, it is only ever
-    // offered when it is newer than the session that is starting.
-  }
+  await withStore('readwrite', (store) => store.delete(KEY) as IDBRequest<unknown>);
 }
 
 /**
- * Calls `run` at most once per `delay`, and always once more after the last
- * change. Trailing-edge matters here: the final edit before a crash is exactly
- * the one worth keeping.
+ * Trailing-edge debounce: the last change before a crash is exactly the one
+ * worth keeping, so `flush` runs it immediately when the tab is closing.
  */
-export function debounce<T extends (...args: any[]) => void>(run: T, delay: number): T & { flush: () => void } {
+export function debounce<T extends (...args: any[]) => void>(
+  run: T,
+  delay: number
+): T & { flush: () => void } {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  let pending: any[] | null = null;
+  let pending: unknown[] | null = null;
 
-  const wrapped = ((...args: any[]) => {
-    pending = args;
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => {
-      timer = null;
-      const call = pending;
-      pending = null;
-      if (call) run(...call);
-    }, delay);
-  }) as T & { flush: () => void };
-
-  wrapped.flush = () => {
+  const fire = () => {
     if (timer) clearTimeout(timer);
     timer = null;
-    const call = pending;
+    const args = pending;
     pending = null;
-    if (call) run(...call);
+    if (args) run(...args);
   };
 
+  const wrapped = ((...args: unknown[]) => {
+    pending = args;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(fire, delay);
+  }) as T & { flush: () => void };
+
+  wrapped.flush = fire;
   return wrapped;
 }

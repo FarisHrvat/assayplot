@@ -183,19 +183,11 @@ export interface Project {
 export const SCHEMA_VERSION = 5;
 export const APP_VERSION = '0.3.0';
 
-// ---------------------------------------------------------------------------
-// identity
-// ---------------------------------------------------------------------------
-
 let counter = 0;
 export function newId(prefix: string): string {
   counter += 1;
   return `${prefix}_${Date.now().toString(36)}${counter.toString(36)}`;
 }
-
-// ---------------------------------------------------------------------------
-// reading values out of a table
-// ---------------------------------------------------------------------------
 
 export function columnIndex(table: DataTable, columnId: string): number {
   return table.columns.findIndex((column) => column.id === columnId);
@@ -321,10 +313,6 @@ export function completeRows(table: DataTable, columnIds: string[]): number[][] 
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// which analyses a table can actually support
-// ---------------------------------------------------------------------------
-
 export type MethodFamily =
   | 'Describe' | 'One sample' | 'Two groups' | 'Three or more groups'
   | 'X versus Y' | 'Two factors' | 'Survival' | 'Categorical counts'
@@ -407,10 +395,6 @@ export function availableMethods(table: DataTable): { info: MethodInfo; usable: 
     return { info, usable: true, why: info.assumes };
   });
 }
-
-// ---------------------------------------------------------------------------
-// running an analysis
-// ---------------------------------------------------------------------------
 
 export interface Comparison {
   labelA: string;
@@ -550,8 +534,6 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
     const columns = analysisColumns(table, analysis);
     const method = analysis.method;
     const labels = columns.map((column) => column.name);
-
-    // ---------------------------------------------------------- describe
     if (method === 'descriptive') {
       const rows = columns.map((column) => ({
         column,
@@ -577,8 +559,6 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
         }],
       };
     }
-
-    // -------------------------------------------------------- one sample
     if (method === 'onesample') {
       const target = columns[0];
       if (!target) return { ...base, error: 'Choose a column to test.' };
@@ -596,18 +576,18 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
         ],
       };
     }
-
-    // ----------------------------------------------- assumption checking
     if (method === 'normality') {
       const rows = columns.map((column) => {
         const values = columnValues(table, column.id);
-        try {
-          const result: any = diagnostics.shapiroWilk(values);
-          return [column.name, result.n, formatNumber(result.statistic), formatP(result.pValue),
-            result.pValue < 0.05 ? 'departs from normal' : 'no detectable departure'];
-        } catch (error) {
-          return [column.name, values.length, '—', '—', error instanceof Error ? error.message : 'not testable'];
+        if (values.length < 3) {
+          return [column.name, values.length, '—', '—', 'needs at least three values'];
         }
+        if (values.length > 5000) {
+          return [column.name, values.length, '—', '—', 'defined for at most 5000 values'];
+        }
+        const result: any = diagnostics.shapiroWilk(values);
+        return [column.name, result.n, formatNumber(result.statistic), formatP(result.pValue),
+          result.pValue < 0.05 ? 'departs from normal' : 'no detectable departure'];
       });
       const anySmall = columns.some((column) => columnValues(table, column.id).length < 20);
       return {
@@ -653,13 +633,15 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
     if (method === 'outlier') {
       const rows = columns.map((column) => {
         const values = columnValues(table, column.id);
-        try {
-          const result: any = diagnostics.grubbsTest(values);
-          return [column.name, values.length, formatNumber(result.value), formatNumber(result.statistic, 3),
-            formatP(result.pValue), result.isOutlier ? 'flagged' : '—'];
-        } catch (error) {
-          return [column.name, values.length, '—', '—', '—', error instanceof Error ? error.message : 'not testable'];
+        if (values.length < 3) {
+          return [column.name, values.length, '—', '—', '—', 'needs at least three values'];
         }
+        if (new Set(values).size === 1) {
+          return [column.name, values.length, '—', '—', '—', 'every value is identical'];
+        }
+        const result: any = diagnostics.grubbsTest(values);
+        return [column.name, values.length, formatNumber(result.value), formatNumber(result.statistic, 3),
+          formatP(result.pValue), result.isOutlier ? 'flagged' : '—'];
       });
       return {
         ...base,
@@ -668,8 +650,6 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
         warnings: ['Removing a value because a test flagged it changes the meaning of every p-value you compute afterwards. If you exclude it, say so in the paper and give the reason.'],
       };
     }
-
-    // --------------------------------------------------------- two factors
     if (method === 'twoway') {
       const rows = groupedRows(table);
       if (rows.length < 4) {
@@ -704,8 +684,6 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
           : [],
       };
     }
-
-    // ------------------------------------------------------------- survival
     if (method === 'survival') {
       const subjects = survivalRows(table);
       if (subjects.length < 2) {
@@ -770,8 +748,6 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
           : [],
       };
     }
-
-    // ------------------------------------------------ categorical counts
     if (method === 'chisq' || method === 'fisher') {
       const counts = table.rows
         .map((row) => columns.map((column) => numericCell(row[columnIndex(table, column.id)])))
@@ -830,8 +806,6 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
         warnings,
       };
     }
-
-    // ------------------------------------------------------------ XY
     if (method === 'correlation' || method === 'spearman' || method === 'regression' || method === 'doseresponse') {
       const target = columns[0];
       if (!target) return { ...base, error: 'Choose a Y column to model.' };
@@ -944,8 +918,6 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
         warnings: ['Correlation measures association, not causation, and a single outlier can dominate it. Look at the scatter plot before quoting the coefficient.'],
       };
     }
-
-    // ----------------------------------------------- repeated measures
     if (method === 'friedman') {
       const matrix = completeRows(table, columns.map((column) => column.id));
       if (matrix.length < 2) {
@@ -985,8 +957,6 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
           : [],
       };
     }
-
-    // ------------------------------------------- three or more groups
     if (method === 'anova' || method === 'kruskal') {
       const groups = columns.map((column) => columnValues(table, column.id));
       if (groups.length < 3) return { ...base, error: 'Needs at least three data columns.' };
@@ -1080,8 +1050,6 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
         warnings,
       };
     }
-
-    // ------------------------------------------------------ two groups
     if (isTwoGroupTest(method)) {
       const groups = columns.map((column) => columnValues(table, column.id));
       if (groups.length !== 2) return { ...base, error: 'Select exactly two columns to compare.' };
@@ -1154,10 +1122,6 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
   }
 }
 
-// ---------------------------------------------------------------------------
-// methods text
-// ---------------------------------------------------------------------------
-
 /** A sentence a researcher can paste into a manuscript. */
 export function methodsSentence(
   table: DataTable,
@@ -1228,10 +1192,6 @@ export function methodsSentence(
       return '';
   }
 }
-
-// ---------------------------------------------------------------------------
-// document construction
-// ---------------------------------------------------------------------------
 
 export function makeColumn(name: string, role: ColumnRole = 'group'): Column {
   return { id: newId('col'), name, role };
@@ -1362,10 +1322,6 @@ export function emptyProject(name = 'Untitled project'): Project {
     layouts: [],
   };
 }
-
-// ---------------------------------------------------------------------------
-// dependency edges
-// ---------------------------------------------------------------------------
 
 /** Ids of every node that depends on the given table, directly or otherwise. */
 export function dependentsOfTable(project: Project, tableId: string): string[] {

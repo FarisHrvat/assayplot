@@ -203,7 +203,7 @@ test('a prototype-era project migrates forward to the current schema', () => {
 test('opening a file that is not a project fails with a readable message', () => {
   assert.throws(
     () => deserializeProject(new TextEncoder().encode('this is not a project')),
-    /not a AssayPlot project/
+    /not an AssayPlot project/
   );
 });
 
