@@ -38,14 +38,18 @@ import {
 } from './plot.tsx';
 import {
   IMPORT_EXTENSIONS,
+  PAGE_SIZES,
+  describeFormat,
   deserializeProject,
   download,
+  importFile,
   parseClipboard,
   serializeProject,
   svgSource,
+  svgToPdf,
   svgToPng,
-  tableFromFile,
   tableToCsv,
+  type PageSize,
 } from './io.ts';
 
 interface BoundaryState { error: Error | null }
@@ -272,9 +276,12 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
 
     for (const file of Array.from(files)) {
       try {
-        const table = await tableFromFile(file);
+        const { table, format } = await importFile(file);
         next = { ...next, tables: [...next.tables, table] };
-        added.push(`${table.name} (${table.rows.length} × ${table.columns.length})`);
+        added.push(
+          `${table.name} (${table.rows.length} × ${table.columns.length}` +
+          `${format ? `, ${describeFormat(format)}` : ''})`
+        );
       } catch (error) {
         reportProblem({
           title: `“${file.name}” could not be imported`,
@@ -576,6 +583,107 @@ function NotionDialog({ onClose }: { onClose: () => void }) {
             onClick={send}>
             {sending ? 'Sending…' : 'Send report'}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExportDialog({ name, getNode, beforeExport, onClose }: {
+  name: string;
+  getNode: () => SVGSVGElement | null;
+  beforeExport?: () => void;
+  onClose: () => void;
+}) {
+  const notify = useStore((s) => s.notify);
+  const reportProblem = useStore((s) => s.reportProblem);
+  const [dpi, setDpi] = useState(300);
+  const [page, setPage] = useState<PageSize>('fit');
+  const [busy, setBusy] = useState(false);
+
+  const run = async (format: 'svg' | 'png' | 'pdf') => {
+    beforeExport?.();
+    const node = getNode();
+    if (!node) return;
+    setBusy(true);
+    try {
+      if (format === 'svg') {
+        download(`${name}.svg`, svgSource(node), 'image/svg+xml');
+        notify('SVG exported. Text stays editable in Illustrator.');
+      } else if (format === 'png') {
+        download(`${name}-${dpi}dpi.png`, await svgToPng(node, dpi), 'image/png');
+        notify(`PNG exported at ${dpi} DPI.`);
+      } else {
+        download(`${name}.pdf`, await svgToPdf(node, dpi, page), 'application/pdf');
+        notify('PDF exported.');
+      }
+      onClose();
+    } catch (error) {
+      onClose();
+      reportProblem({
+        title: `The figure could not be exported as ${format.toUpperCase()}`,
+        detail: error instanceof Error ? error.message : 'The export failed.',
+        done: 'Nothing. The figure is unchanged.',
+        notDone: 'No file was written.',
+        fix: [
+          'Export SVG instead — it needs no rasterising and is what most journals want.',
+          `At ${dpi} DPI this figure is about ${Math.round((Number(getNode()?.getAttribute('width')) || 520) * dpi / 96)} pixels wide. Try a lower DPI or a smaller figure.`,
+        ],
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const node = getNode();
+  const width = Number(node?.getAttribute('width')) || 520;
+  const height = Number(node?.getAttribute('height')) || 380;
+  const pixels = `${Math.round((width * dpi) / 96)} × ${Math.round((height * dpi) / 96)} px`;
+  const inches = `${(width / 96).toFixed(2)} × ${(height / 96).toFixed(2)} in`;
+  const millimetres = `${Math.round((width / 96) * 25.4)} × ${Math.round((height / 96) * 25.4)} mm`;
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" role="dialog" aria-label="Export figure" onClick={(event) => event.stopPropagation()}>
+        <h2>Export “{name}”</h2>
+
+        <p className="modal-lede">
+          At its current size the figure is {inches} ({millimetres}). Journals
+          usually specify a column width in millimetres — set the figure size in
+          the panel first, then choose a resolution here.
+        </p>
+
+        <label className="field">
+          <span>Resolution</span>
+          <select value={dpi} onChange={(event) => setDpi(Number(event.target.value))}>
+            <option value={96}>96 dpi — screen</option>
+            <option value={150}>150 dpi — draft print</option>
+            <option value={300}>300 dpi — most journals</option>
+            <option value={600}>600 dpi — line art, high quality</option>
+            <option value={1200}>1200 dpi — very high</option>
+          </select>
+        </label>
+        <p className="modal-hint">Raster output will be {pixels}.</p>
+
+        <label className="field">
+          <span>PDF page</span>
+          <select value={page} onChange={(event) => setPage(event.target.value as PageSize)}>
+            {(Object.keys(PAGE_SIZES) as PageSize[]).map((size) => (
+              <option key={size} value={size}>{PAGE_SIZES[size].label}</option>
+            ))}
+          </select>
+        </label>
+        <p className="modal-hint">
+          A page size puts the figure on plain white paper, centred, at its true
+          physical size. “Fit the figure” trims the page to the figure itself.
+        </p>
+
+        <div className="modal-actions">
+          <button onClick={onClose}>Cancel</button>
+          <span className="modal-spacer" />
+          <button disabled={busy} onClick={() => run('svg')} title="Vector, text stays editable">SVG</button>
+          <button disabled={busy} onClick={() => run('png')}>PNG</button>
+          <button className="primary" disabled={busy} onClick={() => run('pdf')}>PDF</button>
         </div>
       </div>
     </div>
@@ -1176,6 +1284,7 @@ function FigureView({ id }: { id: string }) {
   const svgRef = useRef<HTMLDivElement>(null);
 
   const [traced, setTraced] = useState<number | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const [selected, setSelected] = useState<Selected>(null);
   const [editing, setEditing] = useState<Selected>(null);
 
@@ -1201,35 +1310,7 @@ function FigureView({ id }: { id: string }) {
     if (editing.kind === 'yLabel') updateStyle(figure.id, { yLabel: value });
   };
 
-  const exportSvg = () => {
-    const node = svgRef.current?.querySelector('svg');
-    if (!node) return;
-    setEditing(null);
-    download(`${figure.name}.svg`, svgSource(node as SVGSVGElement), 'image/svg+xml');
-    notify('SVG exported — text stays editable in Illustrator.');
-  };
 
-  const exportPng = async (dpi: number) => {
-    const node = svgRef.current?.querySelector('svg');
-    if (!node) return;
-    setEditing(null);
-    try {
-      const blob = await svgToPng(node as SVGSVGElement, dpi);
-      download(`${figure.name}-${dpi}dpi.png`, blob, 'image/png');
-      notify(`PNG exported at ${dpi} DPI.`);
-    } catch (error) {
-      reportProblem({
-        title: 'The figure could not be saved as a PNG',
-        detail: error instanceof Error ? error.message : 'Rasterising the figure failed.',
-        done: 'Nothing. The figure itself is unchanged.',
-        notDone: 'No image file was written.',
-        fix: [
-          'Export SVG instead — it is a better format for a journal anyway, and does not need rasterising.',
-          `At ${dpi} DPI this figure would be ${Math.round(figure.style.width * dpi / 96)} × ${Math.round(figure.style.height * dpi / 96)} pixels. Try a smaller figure size or 300 DPI.`,
-        ],
-      });
-    }
-  };
 
   const traceRow = useCallback((rowIndex: number) => {
     setTraced((current) => (current === rowIndex ? null : rowIndex));
@@ -1244,10 +1325,17 @@ function FigureView({ id }: { id: string }) {
       <ViewHead eyebrow={`Figure · from ${table.name}`} title={figure.name}
         onRename={(name) => renameNode('figure', figure.id, name)}>
         <button onClick={() => select({ kind: 'table', id: table.id })}>Open data</button>
-        <button onClick={exportSvg}>Export SVG</button>
-        <button onClick={() => exportPng(300)}>PNG 300 dpi</button>
-        <button onClick={() => exportPng(600)}>PNG 600 dpi</button>
+        <button onClick={() => setExportOpen(true)}>Export…</button>
       </ViewHead>
+
+      {exportOpen && (
+        <ExportDialog
+          name={figure.name}
+          getNode={() => svgRef.current?.querySelector('svg') as SVGSVGElement | null}
+          beforeExport={() => setEditing(null)}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
 
       <div className="figure-layout">
         <div>
@@ -1467,6 +1555,7 @@ function LayoutView({ id }: { id: string }) {
   const notify = useStore((s) => s.notify);
   const select = useStore((s) => s.select);
   const svgRef = useRef<HTMLDivElement>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   if (!layout) return <NothingSelected />;
 
@@ -1484,33 +1573,7 @@ function LayoutView({ id }: { id: string }) {
     })
     .filter((panel) => Boolean(panel.table));
 
-  const exportSvg = () => {
-    const node = svgRef.current?.querySelector('svg');
-    if (!node) return;
-    download(`${layout.name}.svg`, svgSource(node as SVGSVGElement), 'image/svg+xml');
-    notify('Layout exported as SVG.');
-  };
 
-  const exportPng = async (dpi: number) => {
-    const node = svgRef.current?.querySelector('svg');
-    if (!node) return;
-    try {
-      const blob = await svgToPng(node as SVGSVGElement, dpi);
-      download(`${layout.name}-${dpi}dpi.png`, blob, 'image/png');
-      notify(`Layout exported at ${dpi} DPI.`);
-    } catch (error) {
-      useStore.getState().reportProblem({
-        title: 'The layout could not be saved as a PNG',
-        detail: error instanceof Error ? error.message : 'Rasterising the layout failed.',
-        done: 'Nothing. The layout is unchanged.',
-        notDone: 'No image file was written.',
-        fix: [
-          'Export SVG instead.',
-          'A layout of several large panels can exceed what the browser will rasterise. Reduce the panel sizes or export at 300 DPI.',
-        ],
-      });
-    }
-  };
 
   const unused = project.figures.filter((figure) => !layout.panels.includes(figure.id));
 
@@ -1518,10 +1581,16 @@ function LayoutView({ id }: { id: string }) {
     <div className="view">
       <ViewHead eyebrow={`Layout · ${panels.length} panel${panels.length === 1 ? '' : 's'}`} title={layout.name}
         onRename={(name) => renameNode('layout', layout.id, name)}>
-        <button onClick={exportSvg}>Export SVG</button>
-        <button onClick={() => exportPng(300)}>PNG 300 dpi</button>
-        <button onClick={() => exportPng(600)}>PNG 600 dpi</button>
+        <button onClick={() => setExportOpen(true)}>Export…</button>
       </ViewHead>
+
+      {exportOpen && (
+        <ExportDialog
+          name={layout.name}
+          getNode={() => svgRef.current?.querySelector('svg') as SVGSVGElement | null}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
 
       <div className="figure-layout">
         <div>

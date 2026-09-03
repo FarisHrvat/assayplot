@@ -793,3 +793,8 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 }
 .modal-actions { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem; }
 .modal-spacer { flex: 1; }
+.modal-hint {
+  margin: -0.35rem 0 0;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+}
