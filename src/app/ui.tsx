@@ -838,6 +838,25 @@ function demoThumbnailTable(kind: PlotType): DataTable {
       [[1, 10, 3], [2, 19, 5], [3, 26, 4], [4, 38, 7], [5, 44, 5], [6, 59, 8]]);
   }
 
+  if (['pcascore', 'scree', 'dendrogram', 'clusterheatmap', 'plsscore', 'anosimbox'].includes(kind)) {
+    return make('column',
+      [makeColumn('V1'), makeColumn('V2'), makeColumn('V3'), makeColumn('Group')],
+      [[5.1, 3.5, 1.4, 'a'], [4.9, 3.0, 1.4, 'a'], [4.7, 3.2, 1.3, 'a'], [4.6, 3.1, 1.5, 'a'],
+       [7.0, 3.2, 4.7, 'b'], [6.4, 3.2, 4.5, 'b'], [6.9, 3.1, 4.9, 'b'], [5.5, 2.3, 4.0, 'b'],
+       [6.3, 3.3, 6.0, 'c'], [5.8, 2.7, 5.1, 'c'], [7.1, 3.0, 5.9, 'c'], [6.3, 2.9, 5.6, 'c']]);
+  }
+
+  if (kind === 'mrscatter') {
+    return make('column', [makeColumn('On exposure'), makeColumn('On outcome'), makeColumn('SE')],
+      [[0.10, 0.05, 0.02], [0.15, 0.08, 0.03], [0.08, 0.03, 0.015], [0.20, 0.11, 0.04],
+       [0.12, 0.07, 0.02], [0.18, 0.09, 0.03], [0.09, 0.04, 0.02]]);
+  }
+
+  if (kind === 'outliers') {
+    return make('column', [makeColumn('Values')],
+      [[10.1], [9.8], [10.4], [9.9], [10.2], [10.0], [9.7], [10.3], [25], [30]]);
+  }
+
   if (kind === 'forest') {
     return make('column', [makeColumn('Effect'), makeColumn('SE')],
       [[0.4, 0.15], [0.2, 0.1], [0.55, 0.2], [0.3, 0.12], [0.1, 0.18]]);

@@ -43,8 +43,17 @@ jobs:
           # 4.5 or later: the tied rank-test fixtures record the exact
           # conditional distribution R introduced in that version.
           r-version: release
-      - name: Install jsonlite
-        run: Rscript -e 'install.packages("jsonlite", repos = "https://cloud.r-project.org")'
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          # survival, nlme and MASS ship with R. reference.R skips cases whose
+          # package is missing, so the next step checks they're all there.
+          packages: |
+            any::jsonlite
+            any::geepack
+            any::vegan
+      - name: Check the R packages are installed
+        run: |
+          Rscript -e 'for (p in c("jsonlite","survival","nlme","geepack","vegan")) if (!requireNamespace(p, quietly=TRUE)) stop("missing R package: ", p)'
       - run: npm ci
       - name: Regenerate fixtures from R
         run: Rscript validation/generate/reference.R
