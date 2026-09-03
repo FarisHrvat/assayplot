@@ -38,6 +38,30 @@ function tablesByShape(): Record<string, DataTable> {
   return { column: demoProject().tables[0], xy, grouped, survival };
 }
 
+/**
+ * Some plots fit a model, so a generic table of the right shape is not enough:
+ * a logistic curve needs a 0/1 outcome, ANCOVA needs a group per Y column, and
+ * a Cox forest needs a numeric predictor beside time and event.
+ */
+function tablesByPlot(): Record<string, DataTable> {
+  const binary = makeTable('Binary outcome', 'column');
+  binary.columns = [makeColumn('Responded', 'group'), makeColumn('Dose', 'group')];
+  binary.rows = [[0, 1], [0, 2], [0, 3], [1, 4], [0, 5], [1, 6], [1, 7], [1, 8], [1, 9], [0, 3.5]];
+
+  const ancova = makeTable('Two groups', 'xy');
+  ancova.columns = [makeColumn('Baseline', 'x'), makeColumn('Vehicle', 'y'), makeColumn('Drug', 'y')];
+  ancova.rows = [[1, 10, 20], [2, 12, 23], [3, 15, 25], [4, 16, 28], [5, 19, 30], [6, 21, 33]];
+
+  const cox = makeTable('Survival with a covariate', 'survival');
+  cox.columns = [makeColumn('Time', 'time'), makeColumn('Event', 'event'), makeColumn('Age', 'group')];
+  cox.rows = [
+    [5, 1, 60], [8, 1, 55], [12, 0, 70], [3, 1, 65], [15, 1, 50],
+    [20, 0, 45], [7, 1, 72], [9, 0, 58], [11, 1, 63], [6, 1, 68],
+  ];
+
+  return { logisticfit: binary, roc: binary, ancova, hazard: cox };
+}
+
 function render(table: DataTable, plotType: PlotType, style = {}) {
   const figure = { ...makeFigure('Test figure', table.id, plotType), style: defaultStyle(style) };
   return renderToStaticMarkup(createElement(Plot, { table, figure }));
@@ -50,9 +74,11 @@ function markCount(markup: string): number {
 
 const shapes = tablesByShape();
 
+const perPlot = tablesByPlot();
+
 for (const kind of PLOT_KINDS) {
   test(`${kind.id} renders on a ${kind.shape} table`, () => {
-    const table = shapes[kind.shape];
+    const table = perPlot[kind.id] ?? shapes[kind.shape];
     assert.ok(table, `no fixture table for shape ${kind.shape}`);
     const markup = render(table, kind.id);
     assert.match(markup, /^<svg/, `${kind.id} did not produce an svg`);

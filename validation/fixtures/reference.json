@@ -749,6 +749,158 @@
         "fixedEffect": 0.213516577907576
       },
       "note": "four studies, fixed-effect pooling"
+    },
+    {
+      "id": "logistic",
+      "procedure": "logisticRegression",
+      "input": {
+        "x": [
+          [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+        ],
+        "y": [0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+      },
+      "expected": {
+        "intercept": -3.39013237091648,
+        "slope": 0.457171039225402,
+        "interceptSE": 1.69912225410366,
+        "slopeSE": 0.19996509033069,
+        "slopeP": 0.0222393882040727,
+        "deviance": 13.3689196020318,
+        "nullDeviance": 25.8978655613853,
+        "aic": 17.3689196020318
+      },
+      "note": "one continuous predictor"
+    },
+    {
+      "id": "poisson",
+      "procedure": "poissonRegression",
+      "input": {
+        "x": [
+          [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        ],
+        "y": [2, 3, 6, 7, 8, 9, 10, 12, 15, 18]
+      },
+      "expected": {
+        "intercept": 0.998388674410821,
+        "slope": 0.191317959240975,
+        "interceptSE": 0.299206812293687,
+        "slopeSE": 0.0400670697060603,
+        "slopeP": 1.79758491277594e-06,
+        "deviance": 1.52562188371525
+      },
+      "note": "counts against time"
+    },
+    {
+      "id": "ancova",
+      "procedure": "ancova",
+      "input": {
+        "groups": [
+          [12, 14, 13, 16, 15],
+          [18, 20, 19, 22, 21],
+          [25, 27, 26, 29, 28]
+        ],
+        "covariates": [
+          [1, 2, 1.5, 3, 2.5],
+          [1.2, 2.2, 1.8, 3.1, 2.6],
+          [1.1, 2.1, 1.6, 3.2, 2.4]
+        ]
+      },
+      "expected": {
+        "groupF": 7695.74106000784,
+        "groupPValue": 4.96490388138354e-18,
+        "covariateF": 1106.01886792453,
+        "covariatePValue": 2.1703565523618e-12,
+        "slope": 2.03455964325529,
+        "residualDf": 11
+      },
+      "note": "Type II sums of squares, as drop1 gives them"
+    },
+    {
+      "id": "cox",
+      "procedure": "coxRegression",
+      "input": {
+        "rows": [
+          {
+            "time": 5,
+            "event": 1,
+            "x": [
+              1
+            ]
+          },
+          {
+            "time": 6,
+            "event": 0,
+            "x": [
+              1
+            ]
+          },
+          {
+            "time": 6,
+            "event": 1,
+            "x": [
+              0
+            ]
+          },
+          {
+            "time": 2,
+            "event": 1,
+            "x": [
+              1
+            ]
+          },
+          {
+            "time": 4,
+            "event": 1,
+            "x": [
+              0
+            ]
+          },
+          {
+            "time": 4,
+            "event": 0,
+            "x": [
+              0
+            ]
+          },
+          {
+            "time": 3,
+            "event": 1,
+            "x": [
+              1
+            ]
+          },
+          {
+            "time": 7,
+            "event": 1,
+            "x": [
+              0
+            ]
+          },
+          {
+            "time": 8,
+            "event": 0,
+            "x": [
+              1
+            ]
+          },
+          {
+            "time": 9,
+            "event": 1,
+            "x": [
+              0
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "coefficient": 0.305288599039597,
+        "standardError": 0.823195049854541,
+        "hazardRatio": 1.35701658018086,
+        "pValue": 0.710743182083444,
+        "logLikelihood": -11.0105443358524,
+        "statistic": 0.137033092975948
+      },
+      "note": "Efron tie handling, one binary predictor"
     }
   ]
 }

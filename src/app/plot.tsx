@@ -12,6 +12,8 @@ import React from 'react';
 import * as stats from '../core/stats.js';
 // @ts-ignore
 import { normalQuantile } from '../core/diagnostics.js';
+// @ts-ignore
+import * as regression from '../core/regression.js';
 import { getSettings } from './settings.ts';
 import {
   type AnalysisResult,
@@ -21,6 +23,7 @@ import {
   type PlotType,
   type TableShape,
   columnValues,
+  predictorCandidates,
   survivalRows,
   significanceStars,
   valueColumns,
@@ -180,7 +183,7 @@ function formatTick(value: number): string {
 
 const MARGIN = { top: 40, right: 26, bottom: 58, left: 66 };
 
-export type PlotGroup = 'Compare groups' | 'Distribution' | 'X versus Y' | 'Matrix' | 'Parts of a whole' | 'Survival' | 'Agreement';
+export type PlotGroup = 'Compare groups' | 'Distribution' | 'X versus Y' | 'Matrix' | 'Parts of a whole' | 'Survival' | 'Agreement' | 'Model';
 
 export interface PlotKind {
   id: PlotType;
@@ -222,9 +225,14 @@ export const PLOT_KINDS: PlotKind[] = [
 
   { id: 'blandaltman', label: 'Bland–Altman agreement', group: 'Agreement', shape: 'column' },
   { id: 'forest', label: 'Forest plot (meta-analysis)', group: 'Agreement', shape: 'column' },
+
+  { id: 'logisticfit', label: 'Fitted probability curve', group: 'Model', shape: 'column' },
+  { id: 'roc', label: 'ROC curve', group: 'Model', shape: 'column' },
+  { id: 'ancova', label: 'Parallel lines by group (ANCOVA)', group: 'Model', shape: 'xy' },
+  { id: 'hazard', label: 'Hazard ratios (Cox)', group: 'Model', shape: 'survival' },
 ];
 
-export const PLOT_GROUPS: PlotGroup[] = ['Compare groups', 'Distribution', 'X versus Y', 'Matrix', 'Parts of a whole', 'Survival', 'Agreement'];
+export const PLOT_GROUPS: PlotGroup[] = ['Compare groups', 'Distribution', 'X versus Y', 'Matrix', 'Parts of a whole', 'Survival', 'Agreement', 'Model'];
 
 export function plotsForShape(shape: TableShape): PlotKind[] {
   // A Grouped table plots like a Column table: its value columns are the series.
@@ -303,6 +311,10 @@ export function Plot(props: PlotProps) {
   if (plotType === 'survival') return canvas(<SurvivalPlot {...shared} />);
   if (plotType === 'blandaltman') return canvas(<BlandAltmanPlot {...shared} />);
   if (plotType === 'forest') return canvas(<ForestPlot {...shared} />);
+  if (plotType === 'logisticfit') return canvas(<LogisticFitPlot {...shared} />);
+  if (plotType === 'roc') return canvas(<RocPlot {...shared} />);
+  if (plotType === 'ancova') return canvas(<AncovaPlot {...shared} />);
+  if (plotType === 'hazard') return canvas(<HazardPlot {...shared} />);
   if (plotType === 'heatmap' || plotType === 'correlation') return canvas(<MatrixPlot {...shared} />);
   if (plotType === 'pie' || plotType === 'donut') return canvas(<PiePlot {...shared} />);
   if (DISTRIBUTION_PLOTS.includes(plotType)) return canvas(<DistributionPlot {...shared} />);
@@ -1512,6 +1524,344 @@ function Legend({ items, placement, font }: any) {
         </g>
       ))}
     </g>
+  );
+}
+
+/**
+ * Picks the columns a model plot needs: a 0/1 outcome and a numeric predictor.
+ * Which column is which is inferred rather than configured, so a figure keeps
+ * working when its analysis is deleted.
+ */
+function binaryOutcomeAndPredictor(table: DataTable) {
+  const columns = valueColumns(table);
+  const values = columns.map((column) => columnValues(table, column.id));
+  const outcomeIndex = values.findIndex(
+    (column) => column.length > 3 && column.every((value) => value === 0 || value === 1) &&
+      column.some((value) => value === 1) && column.some((value) => value === 0)
+  );
+  if (outcomeIndex < 0) return null;
+  const predictorIndex = columns.findIndex((_, index) => index !== outcomeIndex);
+  if (predictorIndex < 0) return null;
+
+  const rows: { y: number; x: number }[] = [];
+  const outcomeAt = columnIndexIn(table, columns[outcomeIndex].id);
+  const predictorAt = columnIndexIn(table, columns[predictorIndex].id);
+  for (const row of table.rows) {
+    const y = Number(row[outcomeAt]);
+    const x = Number(row[predictorAt]);
+    if (row[outcomeAt] === null || row[predictorAt] === null) continue;
+    if (!Number.isFinite(y) || !Number.isFinite(x)) continue;
+    rows.push({ y, x });
+  }
+  return { outcome: columns[outcomeIndex], predictor: columns[predictorIndex], rows };
+}
+
+const columnIndexIn = (table: DataTable, columnId: string) =>
+  table.columns.findIndex((column) => column.id === columnId);
+
+/**
+ * Observed 0/1 outcomes against a predictor, with the fitted logistic curve
+ * through them. The points are nudged off the 0 and 1 lines so that ties are
+ * visible rather than stacked into a single mark.
+ */
+function LogisticFitPlot(props: any) {
+  const { table, figure, plotLeft, plotRight, plotTop, plotBottom, font } = props;
+  const style: FigureStyle = figure.style;
+  const picked = binaryOutcomeAndPredictor(table);
+  if (!picked || picked.rows.length < 4) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Needs a column of 0s and 1s and a numeric predictor column" />;
+  }
+
+  let fit: any;
+  try {
+    fit = regression.logisticRegression([picked.rows.map((row) => row.x)], picked.rows.map((row) => row.y), [picked.predictor.name]);
+  } catch (problem) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message={problem instanceof Error ? problem.message : 'The model could not be fitted'} />;
+  }
+
+  const xs = picked.rows.map((row) => row.x);
+  const xLow = style.xMin ?? Math.min(...xs);
+  const xHigh = style.xMax ?? Math.max(...xs);
+  const xScale = makeScale(xLow, xHigh, plotLeft, plotRight);
+  const yScale = makeScale(0, 1, plotBottom, plotTop);
+  const colour = colorFor(style, picked.outcome.id, 0);
+
+  const [intercept, slope] = fit.terms.map((term: any) => term.estimate);
+  const curve = Array.from({ length: 121 }, (_, i) => {
+    const x = xLow + ((xHigh - xLow) * i) / 120;
+    return `${xScale.toPixel(x)},${yScale.toPixel(1 / (1 + Math.exp(-(intercept + slope * x))))}`;
+  }).join(' ');
+
+  const half = -intercept / slope;
+
+  return (
+    <>
+      <Grid style={style} xTicks={niceTicks(xLow, xHigh)} yTicks={[0, 0.25, 0.5, 0.75, 1]}
+        xScale={xScale} yScale={yScale}
+        plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
+      <YAxis {...props} ticks={[0, 0.25, 0.5, 0.75, 1]} yScale={yScale} />
+      <XAxisNumeric {...props} ticks={niceTicks(xLow, xHigh)} xScale={xScale} fallbackLabel={picked.predictor.name} />
+
+      {half > xLow && half < xHigh && (
+        <g>
+          <line x1={xScale.toPixel(half)} x2={xScale.toPixel(half)} y1={yScale.toPixel(0.5)} y2={plotBottom}
+            stroke="#999" strokeWidth={1} strokeDasharray="4 3" />
+          <text x={xScale.toPixel(half)} y={plotTop - 4} textAnchor="middle" fontSize={font - 2} fill="#666">
+            50% at {formatTick(Number(half.toFixed(3)))}
+          </text>
+        </g>
+      )}
+
+      <polyline points={curve} fill="none" stroke={colour} strokeWidth={2} />
+
+      {picked.rows.map((row, index) => (
+        <Marker key={index} x={xScale.toPixel(row.x)}
+          y={yScale.toPixel(row.y === 1 ? 0.97 : 0.03)}
+          r={style.pointSize} shape={shapeFor(row.y)} fill={colour} fillOpacity={0.7}
+          stroke="#fff" strokeWidth={0.8}>
+          <title>{`${picked.predictor.name} ${row.x}, ${picked.outcome.name} ${row.y}`}</title>
+        </Marker>
+      ))}
+    </>
+  );
+}
+
+/**
+ * ROC curve for a single predictor against a 0/1 outcome, with the area under
+ * it. Thresholds are the observed values, so the curve is the empirical one
+ * rather than a smoothed fit.
+ */
+function RocPlot(props: any) {
+  const { table, figure, plotLeft, plotRight, plotTop, plotBottom, font } = props;
+  const style: FigureStyle = figure.style;
+  const picked = binaryOutcomeAndPredictor(table);
+  if (!picked || picked.rows.length < 4) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Needs a column of 0s and 1s and a numeric predictor column" />;
+  }
+
+  const positives = picked.rows.filter((row) => row.y === 1).map((row) => row.x);
+  const negatives = picked.rows.filter((row) => row.y === 0).map((row) => row.x);
+  if (!positives.length || !negatives.length) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Needs at least one case and one control" />;
+  }
+
+  const thresholds = [Infinity, ...[...new Set(picked.rows.map((row) => row.x))].sort((a, b) => b - a)];
+  const points = thresholds.map((threshold) => ({
+    fpr: negatives.filter((value) => value >= threshold).length / negatives.length,
+    tpr: positives.filter((value) => value >= threshold).length / positives.length,
+  }));
+  points.push({ fpr: 1, tpr: 1 });
+
+  // Trapezoidal area under the empirical curve, which equals the Mann-Whitney
+  // statistic scaled by the two group sizes.
+  let area = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    area += ((points[i].fpr - points[i - 1].fpr) * (points[i].tpr + points[i - 1].tpr)) / 2;
+  }
+  const auc = Math.max(area, 1 - area);
+
+  const xScale = makeScale(0, 1, plotLeft, plotRight);
+  const yScale = makeScale(0, 1, plotBottom, plotTop);
+  const colour = colorFor(style, picked.predictor.id, 0);
+  const ticks = [0, 0.25, 0.5, 0.75, 1];
+
+  return (
+    <>
+      <Grid style={style} xTicks={ticks} yTicks={ticks} xScale={xScale} yScale={yScale}
+        plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
+      <YAxis {...props} ticks={ticks} yScale={yScale} />
+      <XAxisNumeric {...props} ticks={ticks} xScale={xScale} fallbackLabel="1 − specificity" />
+
+      <line x1={plotLeft} y1={plotBottom} x2={plotRight} y2={plotTop}
+        stroke="#BBB" strokeWidth={1} strokeDasharray="5 4" />
+      <polyline fill="none" stroke={colour} strokeWidth={2}
+        points={points.map((point) => `${xScale.toPixel(point.fpr)},${yScale.toPixel(point.tpr)}`).join(' ')} />
+
+      <text x={plotRight - 6} y={plotBottom - 8} textAnchor="end" fontSize={font} fill="#444">
+        AUC = {auc.toFixed(3)}
+      </text>
+    </>
+  );
+}
+
+/**
+ * The picture behind ANCOVA: each Y column is a group, the X column is the
+ * covariate, and the lines share the pooled within-group slope. Parallel lines
+ * are the assumption, so drawing them is also the way to check it.
+ */
+function AncovaPlot(props: any) {
+  const { table, figure, plotLeft, plotRight, plotTop, plotBottom, legendPlacement } = props;
+  const style: FigureStyle = figure.style;
+  const covariate = xColumn(table);
+  const groups = valueColumns(table)
+    .map((column, index) => ({ column, index, ...xyPairs(table, column.id) }))
+    .filter((group) => group.x.length > 1);
+
+  if (!covariate || groups.length < 2) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Needs an X column for the covariate and two or more Y columns, one per group" />;
+  }
+
+  let fit: any;
+  try {
+    fit = regression.ancova(groups.map((group) => group.y), groups.map((group) => group.x));
+  } catch (problem) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message={problem instanceof Error ? problem.message : 'The model could not be fitted'} />;
+  }
+
+  const allX = groups.flatMap((group) => group.x);
+  const allY = groups.flatMap((group) => group.y);
+  const xLow = style.xMin ?? Math.min(...allX);
+  const xHigh = style.xMax ?? Math.max(...allX);
+  const yPad = (Math.max(...allY) - Math.min(...allY)) * 0.08 || 1;
+  const yLow = style.yMin ?? Math.min(...allY) - yPad;
+  const yHigh = style.yMax ?? Math.max(...allY) + yPad;
+  const xScale = makeScale(xLow, xHigh, plotLeft, plotRight);
+  const yScale = makeScale(yLow, yHigh, plotBottom, plotTop);
+
+  const grandX = allX.reduce((sum, value) => sum + value, 0) / allX.length;
+
+  return (
+    <>
+      <Grid style={style} xTicks={niceTicks(xLow, xHigh)} yTicks={niceTicks(yLow, yHigh)}
+        xScale={xScale} yScale={yScale}
+        plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
+      <YAxis {...props} ticks={niceTicks(yLow, yHigh)} yScale={yScale} />
+      <XAxisNumeric {...props} ticks={niceTicks(xLow, xHigh)} xScale={xScale} fallbackLabel={covariate.name} />
+
+      <line x1={xScale.toPixel(grandX)} x2={xScale.toPixel(grandX)} y1={plotTop} y2={plotBottom}
+        stroke="#CCC" strokeWidth={1} strokeDasharray="4 3" />
+
+      {groups.map((group, index) => {
+        const colour = colorFor(style, group.column.id, group.index);
+        const adjusted = fit.adjustedMeans[index].adjusted;
+        const at = (x: number) => adjusted + fit.slope * (x - grandX);
+        return (
+          <g key={group.column.id}>
+            <line x1={xScale.toPixel(xLow)} y1={yScale.toPixel(at(xLow))}
+              x2={xScale.toPixel(xHigh)} y2={yScale.toPixel(at(xHigh))}
+              stroke={colour} strokeWidth={2} />
+            {group.x.map((x, i) => (
+              <Marker key={i} x={xScale.toPixel(x)} y={yScale.toPixel(group.y[i])}
+                r={style.pointSize} shape={shapeFor(index)} fill={colour} fillOpacity={0.75}
+                stroke="#fff" strokeWidth={0.8}>
+                <title>{`${group.column.name}: ${covariate.name} ${x}, value ${group.y[i]}`}</title>
+              </Marker>
+            ))}
+          </g>
+        );
+      })}
+
+      {style.showLegend && (
+        <Legend placement={legendPlacement} font={props.font}
+          items={groups.map((group, index) => ({
+            label: group.column.name,
+            color: colorFor(style, group.column.id, group.index),
+            shapeIndex: index,
+          }))} />
+      )}
+    </>
+  );
+}
+
+/**
+ * Hazard ratios from a Cox model, one row per predictor, on a log scale so that
+ * a doubling and a halving sit the same distance from no effect.
+ */
+function HazardPlot(props: any) {
+  const { table, figure, plotLeft, plotRight, plotTop, plotBottom, font } = props;
+  const style: FigureStyle = figure.style;
+  const predictors = predictorCandidates(table).filter(
+    (column) => columnValues(table, column.id).length > 0
+  );
+  if (!predictors.length) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Add a numeric predictor column to the survival table" />;
+  }
+
+  const timeAt = table.columns.findIndex((column: any) => column.role === 'time');
+  const eventAt = table.columns.findIndex((column: any) => column.role === 'event');
+  const predictorAt = predictors.map((column) => columnIndexIn(table, column.id));
+  const rows: { time: number; event: number; x: number[] }[] = [];
+  for (const row of table.rows) {
+    const time = Number(row[timeAt]);
+    const event = Number(row[eventAt]);
+    const x = predictorAt.map((index) => Number(row[index]));
+    if (row[timeAt] === null || row[eventAt] === null) continue;
+    if (!Number.isFinite(time) || !Number.isFinite(event) || x.some((value) => !Number.isFinite(value))) continue;
+    rows.push({ time, event: event === 1 ? 1 : 0, x });
+  }
+
+  let fit: any;
+  try {
+    fit = regression.coxRegression(rows, predictors.map((column) => column.name));
+  } catch (problem) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message={problem instanceof Error ? problem.message : 'The model could not be fitted'} />;
+  }
+
+  const terms = fit.terms.map((term: any) => ({
+    label: term.term,
+    ratio: term.hazardRatio,
+    low: term.hazardRatioConfidenceInterval95[0],
+    high: term.hazardRatioConfidenceInterval95[1],
+    pValue: term.pValue,
+  }));
+
+  const logLow = Math.min(...terms.map((term: any) => Math.log(term.low)));
+  const logHigh = Math.max(...terms.map((term: any) => Math.log(term.high)));
+  const span = Math.max(Math.abs(logLow), Math.abs(logHigh)) * 1.15 || 1;
+  const xScale = makeScale(-span, span, plotLeft, plotRight);
+  const ticks = [-span, -span / 2, 0, span / 2, span];
+
+  const step = (plotBottom - plotTop) / terms.length;
+  const rowY = (index: number) => plotTop + step * (index + 0.5);
+
+  return (
+    <>
+      <Grid style={style} xTicks={ticks} yTicks={[]} xScale={xScale} yScale={makeScale(0, 1, plotBottom, plotTop)}
+        plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
+
+      <line x1={xScale.toPixel(0)} x2={xScale.toPixel(0)} y1={plotTop} y2={plotBottom}
+        stroke="#999" strokeWidth={1} strokeDasharray="4 3" />
+
+      {terms.map((term: any, index: number) => {
+        const colour = colorFor(style, predictors[index]?.id ?? term.label, index);
+        return (
+          <g key={term.label}>
+            <line x1={xScale.toPixel(Math.log(term.low))} x2={xScale.toPixel(Math.log(term.high))}
+              y1={rowY(index)} y2={rowY(index)} stroke={colour} strokeWidth={1.6} />
+            <Marker x={xScale.toPixel(Math.log(term.ratio))} y={rowY(index)}
+              r={style.pointSize + 1} shape={shapeFor(index)} fill={colour} stroke="#fff" strokeWidth={0.8}>
+              <title>{`${term.label}: HR ${term.ratio.toFixed(3)} (${term.low.toFixed(3)} to ${term.high.toFixed(3)})`}</title>
+            </Marker>
+            <text x={plotLeft - 6} y={rowY(index) + font / 3} textAnchor="end" fontSize={font} fill="#333">
+              {term.label}
+            </text>
+            <text x={plotRight - 2} y={rowY(index) - 6} textAnchor="end" fontSize={font - 2} fill="#666">
+              {term.ratio.toFixed(2)} ({term.low.toFixed(2)}–{term.high.toFixed(2)}) {significanceStars(term.pValue)}
+            </text>
+          </g>
+        );
+      })}
+
+      <g>
+        <line x1={plotLeft} x2={plotRight} y1={plotBottom} y2={plotBottom} stroke="#333" />
+        {ticks.map((tick) => (
+          <text key={tick} x={xScale.toPixel(tick)} y={plotBottom + font + 4} textAnchor="middle" fontSize={font - 1} fill="#555">
+            {formatTick(Number(Math.exp(tick).toPrecision(2)))}
+          </text>
+        ))}
+        <text x={(plotLeft + plotRight) / 2} y={props.xLabelY} textAnchor="middle" fontSize={font} fill="#333">
+          {style.xLabel || 'Hazard ratio (log scale)'}
+        </text>
+      </g>
+    </>
   );
 }
 

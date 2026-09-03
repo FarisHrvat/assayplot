@@ -15,6 +15,7 @@ import * as stats from '../src/core/stats.js';
 import * as posthoc from '../src/core/posthoc.js';
 import * as diagnostics from '../src/core/diagnostics.js';
 import * as agreement from '../src/core/agreement.js';
+import * as regression from '../src/core/regression.js';
 
 const fixtures = JSON.parse(
   readFileSync(new URL('../validation/fixtures/reference.json', import.meta.url), 'utf8')
@@ -68,6 +69,34 @@ const RUNNERS = {
     stats.logRankTest(timesA, eventsA, timesB, eventsB),
   kaplanMeier: ({ times, events }) => stats.kaplanMeier(times, events),
 
+  // Flattened: the fixture compares named scalars rather than a term array.
+  logisticRegression: ({ x, y }) => {
+    const fit = regression.logisticRegression(x, y);
+    return {
+      intercept: fit.terms[0].estimate, slope: fit.terms[1].estimate,
+      interceptSE: fit.terms[0].standardError, slopeSE: fit.terms[1].standardError,
+      slopeP: fit.terms[1].pValue,
+      deviance: fit.deviance, nullDeviance: fit.nullDeviance, aic: fit.aic,
+    };
+  },
+  poissonRegression: ({ x, y }) => {
+    const fit = regression.poissonRegression(x, y);
+    return {
+      intercept: fit.terms[0].estimate, slope: fit.terms[1].estimate,
+      interceptSE: fit.terms[0].standardError, slopeSE: fit.terms[1].standardError,
+      slopeP: fit.terms[1].pValue, deviance: fit.deviance,
+    };
+  },
+  ancova: ({ groups, covariates }) => regression.ancova(groups, covariates),
+  coxRegression: ({ rows }) => {
+    const fit = regression.coxRegression(rows.map((row) => ({ ...row, x: row.x })));
+    return {
+      coefficient: fit.terms[0].estimate, standardError: fit.terms[0].standardError,
+      hazardRatio: fit.terms[0].hazardRatio, pValue: fit.terms[0].pValue,
+      logLikelihood: fit.logLikelihood, statistic: fit.statistic,
+    };
+  },
+
   mcnemarTest: ({ table }) => agreement.mcnemarTest(table),
   cohensKappa: ({ table }) => agreement.cohensKappa(table),
   tost: ({ a, b, bound }) => agreement.tost(a, b, bound),
@@ -118,6 +147,9 @@ const RUNNERS = {
 // Values below NEGLIGIBLE are past the resolution of either implementation.
 const FIELD_TOLERANCE = {
   oddsRatioConditional: 1e-3,
+  // Iteratively reweighted least squares against R's own IRLS: both converge
+  // to the same optimum but stop at slightly different points on it.
+  interceptSE: 1e-6, slopeSE: 1e-6, slopeP: 1e-5,
   // The 4PL fit is a coordinate search against R's Levenberg-Marquardt; both
   // land on the same optimum but stop at slightly different points on it.
   ec50: 1e-5, hillSlope: 1e-5, bottom: 1e-5, top: 1e-5,

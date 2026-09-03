@@ -13,6 +13,8 @@ import * as posthoc from '../core/posthoc.js';
 import * as diagnostics from '../core/diagnostics.js';
 // @ts-ignore
 import * as agreement from '../core/agreement.js';
+// @ts-ignore
+import * as regression from '../core/regression.js';
 
 export type Cell = number | string | null;
 
@@ -88,6 +90,10 @@ export type Method =
   | 'mantelhaenszel'
   | 'cochranq'
   | 'resourceequation'
+  | 'logistic'
+  | 'poisson'
+  | 'ancova'
+  | 'cox'
   | 'normality'
   | 'dagostino'
   | 'variance'
@@ -113,6 +119,12 @@ export interface AnalysisOptions {
   /** Groups and subjects per group, for the resource equation. */
   designGroups?: number;
   designPerGroup?: number;
+  /** Column holding the thing being predicted, for the modelling methods. */
+  outcomeColumn?: string;
+  /** Continuous column adjusted for in ANCOVA. */
+  covariateColumn?: string;
+  /** Column naming the group in ANCOVA. */
+  groupColumn?: string;
 }
 
 export interface Analysis {
@@ -130,7 +142,8 @@ export type PlotType =
   | 'scatter' | 'line' | 'area' | 'step' | 'bubble'
   | 'heatmap' | 'correlation'
   | 'pie' | 'donut'
-  | 'survival' | 'blandaltman' | 'forest';
+  | 'survival' | 'blandaltman' | 'forest'
+  | 'logisticfit' | 'roc' | 'ancova' | 'hazard';
 
 export type ErrorBarKind = 'none' | 'sd' | 'sem' | 'ci95' | 'range';
 export type GridKind = 'none' | 'horizontal' | 'vertical' | 'both';
@@ -230,6 +243,16 @@ export function columnValues(table: DataTable, columnId: string): number[] {
 }
 
 /** Columns eligible to carry measurements, in table order. */
+/**
+ * Columns a model may use as a predictor. Survival tables keep time and event
+ * out of valueColumns, so the modelling methods need their own list.
+ */
+export function predictorCandidates(table: DataTable): Column[] {
+  return table.columns.filter(
+    (column) => !['ignore', 'label', 'time', 'event'].includes(column.role)
+  );
+}
+
 export function valueColumns(table: DataTable): Column[] {
   if (table.shape === 'xy') {
     return table.columns.filter((column) => column.role === 'y');
@@ -333,7 +356,7 @@ export function completeRows(table: DataTable, columnIds: string[]): number[][] 
 export type MethodFamily =
   | 'Describe' | 'One sample' | 'Two groups' | 'Three or more groups'
   | 'X versus Y' | 'Two factors' | 'Survival' | 'Categorical counts'
-  | 'Agreement' | 'Equivalence' | 'Meta-analysis' | 'Study design'
+  | 'Agreement' | 'Equivalence' | 'Meta-analysis' | 'Study design' | 'Modelling'
   | 'Assumptions and screening';
 
 export interface MethodInfo {
@@ -380,6 +403,11 @@ export const METHODS: MethodInfo[] = [
   { id: 'cochranq', label: "Meta-analysis (Cochran's Q, I²)", family: 'Meta-analysis', assumes: 'One row per study: its effect in the first column and that effect\'s standard error in the second.', minGroups: 2, maxGroups: 2, shapes: ['column'] },
   { id: 'mantelhaenszel', label: 'Mantel–Haenszel (pooled 2 × 2)', family: 'Meta-analysis', assumes: 'One row per stratum, four columns of counts: a, b, c, d.', minGroups: 4, maxGroups: 4, shapes: ['column'] },
 
+  { id: 'logistic', label: 'Logistic regression', family: 'Modelling', assumes: 'One row per subject. The outcome column is 0 or 1; every other selected column is a predictor.', minGroups: 2, maxGroups: Infinity, shapes: ['column'] },
+  { id: 'poisson', label: 'Poisson regression (counts)', family: 'Modelling', assumes: 'One row per observation. The outcome column holds whole counts; every other selected column is a predictor.', minGroups: 2, maxGroups: Infinity, shapes: ['column'] },
+  { id: 'ancova', label: 'ANCOVA (adjust for a covariate)', family: 'Modelling', assumes: 'On an XY table the X column is the covariate and each Y column is a group. On a Column table, choose the outcome, the covariate and the column naming the group.', minGroups: 2, maxGroups: Infinity, shapes: ['xy', 'column'] },
+  { id: 'cox', label: 'Cox proportional hazards', family: 'Modelling', assumes: 'A Survival table plus one or more predictor columns. Hazards are assumed proportional over time.', minGroups: 1, maxGroups: Infinity, shapes: ['survival'] },
+
   { id: 'resourceequation', label: 'Resource equation (animal numbers)', family: 'Study design', assumes: 'No data: a rough check on group sizes when no effect size is available to power against.', minGroups: 1, maxGroups: Infinity, shapes: ['column', 'grouped', 'xy', 'survival'] },
 
   { id: 'twoway', label: 'Two-way ANOVA', family: 'Two factors', assumes: 'Two crossed factors with the same number of observations in every combination. Repeat a row label for replicates.', minGroups: 2, maxGroups: Infinity, shapes: ['grouped'] },
@@ -395,7 +423,7 @@ export const METHODS: MethodInfo[] = [
 export const METHOD_FAMILIES: MethodFamily[] = [
   'Describe', 'One sample', 'Two groups', 'Three or more groups',
   'Two factors', 'X versus Y', 'Survival', 'Categorical counts',
-  'Agreement', 'Equivalence', 'Meta-analysis', 'Study design',
+  'Modelling', 'Agreement', 'Equivalence', 'Meta-analysis', 'Study design',
   'Assumptions and screening',
 ];
 
@@ -779,6 +807,246 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
           : [],
       };
     }
+    if (method === 'logistic' || method === 'poisson') {
+      const chosen = analysis.options.outcomeColumn;
+      const outcome = columns.find((column) => column.id === chosen) ?? columns[0];
+      const predictors = columns.filter((column) => column.id !== outcome.id);
+      if (!predictors.length) {
+        return { ...base, error: 'Needs at least one predictor column besides the outcome.' };
+      }
+
+      // Every row must be complete: a model cannot use a subject whose
+      // predictor is missing, and dropping them silently would mislead.
+      const ids = [outcome.id, ...predictors.map((column) => column.id)];
+      const complete = completeRows(table, ids);
+      const dropped = table.rows.length - complete.length;
+      if (complete.length < predictors.length + 2) {
+        return {
+          ...base,
+          error: `Only ${complete.length} row(s) have a value in every selected column; ${predictors.length + 1} parameters need more than that.`,
+        };
+      }
+
+      const y = complete.map((row) => row[0]);
+      const x = predictors.map((_, index) => complete.map((row) => row[index + 1]));
+
+      const offender = method === 'logistic'
+        ? y.find((value) => value !== 0 && value !== 1)
+        : y.find((value) => value < 0 || !Number.isInteger(value));
+      if (offender !== undefined) {
+        return {
+          ...base,
+          error: method === 'logistic'
+            ? `Column "${outcome.name}" holds ${offender}. A logistic outcome must be 0 or 1 — code the event as 1 and its absence as 0.`
+            : `Column "${outcome.name}" holds ${offender}. Poisson regression counts whole events, so the outcome must be 0 or a positive whole number.`,
+        };
+      }
+      if (new Set(y).size < 2) {
+        return {
+          ...base,
+          error: `Every row of "${outcome.name}" holds the same value, so there is nothing to model.`,
+        };
+      }
+      const raw: any = method === 'logistic'
+        ? regression.logisticRegression(x, y, predictors.map((column) => column.name))
+        : regression.poissonRegression(x, y, predictors.map((column) => column.name));
+
+      const ratioLabel = method === 'logistic' ? 'Odds ratio' : 'Rate ratio';
+      return {
+        ...base,
+        raw,
+        pValue: raw.pValue,
+        summary: [
+          { label: 'Outcome', value: outcome.name },
+          { label: 'Observations', value: String(raw.n) },
+          { label: 'Model P', value: formatP(raw.pValue), note: 'against the intercept-only model' },
+          ...(method === 'logistic'
+            ? [{ label: 'AUC', value: formatNumber(raw.auc, 3), note: 'how well it separates' }]
+            : [{ label: 'Dispersion', value: formatNumber(raw.dispersion, 2), note: raw.overdispersed ? 'overdispersed' : 'as Poisson expects' }]),
+        ],
+        tables: [{
+          title: 'Coefficients',
+          columns: ['Term', 'Estimate', 'SE', ratioLabel, '95% CI', 'P value'],
+          rows: raw.terms.map((term: any) => [
+            term.term,
+            formatNumber(term.estimate, 4),
+            formatNumber(term.standardError, 4),
+            term.term === '(Intercept)' ? '—' : formatNumber(term.ratio, 4),
+            term.term === '(Intercept)' ? '—'
+              : `${formatNumber(term.ratioConfidenceInterval95[0], 3)} to ${formatNumber(term.ratioConfidenceInterval95[1], 3)}`,
+            formatP(term.pValue),
+          ]),
+        }],
+        warnings: [
+          ...(dropped > 0 ? [`${dropped} row(s) were left out because a selected column was blank.`] : []),
+          ...(raw.dispersionNote ? [raw.dispersionNote] : []),
+        ],
+      };
+    }
+
+    if (method === 'ancova') {
+      if (table.shape === 'xy') {
+        const covariateColumn = xColumn(table);
+        const groups = columns
+          .map((column) => ({ name: column.name, ...xyPairs(table, column.id) }))
+          .filter((group) => group.x.length > 1);
+        if (!covariateColumn || groups.length < 2) {
+          return {
+            ...base,
+            error: `Needs an X column holding the covariate and at least two Y columns, one per group; ${groups.length} usable Y column(s) were found.`,
+          };
+        }
+        const fit: any = regression.ancova(groups.map((group) => group.y), groups.map((group) => group.x));
+        return {
+          ...base,
+          raw: { ...fit, groupNames: groups.map((group) => group.name) },
+          pValue: fit.groupPValue,
+          summary: [
+            { label: 'Group effect', value: formatP(fit.groupPValue), note: `F(${fit.groupDf}, ${fit.residualDf}) = ${formatNumber(fit.groupF, 3)}` },
+            { label: 'Covariate', value: formatP(fit.covariatePValue), note: `F(1, ${fit.residualDf}) = ${formatNumber(fit.covariateF, 3)}` },
+            { label: 'Slope', value: formatNumber(fit.slope), note: `per unit of ${covariateColumn.name}` },
+          ],
+          tables: [{
+            title: `Means adjusted to the average ${covariateColumn.name}`,
+            columns: ['Group', 'n', 'Raw mean', 'Adjusted mean'],
+            rows: fit.adjustedMeans.map((entry: any, index: number) => [
+              groups[index].name, entry.n, formatNumber(entry.raw), formatNumber(entry.adjusted),
+            ]),
+          }],
+          warnings: ['ANCOVA assumes the covariate relates to the outcome the same way in every group. If the lines are not parallel, the adjusted means do not mean much.'],
+        };
+      }
+
+      const outcome = table.columns.find((column) => column.id === analysis.options.outcomeColumn);
+      const covariate = table.columns.find((column) => column.id === analysis.options.covariateColumn);
+      const grouping = table.columns.find((column) => column.id === analysis.options.groupColumn);
+      if (!outcome || !covariate || !grouping) {
+        return { ...base, error: 'Choose three columns under Options: the outcome, the covariate to adjust for, and the one naming the group.' };
+      }
+      if (outcome.id === covariate.id || outcome.id === grouping.id || covariate.id === grouping.id) {
+        return { ...base, error: 'The outcome, covariate and group must be three different columns.' };
+      }
+
+      const outcomeIndex = columnIndex(table, outcome.id);
+      const covariateIndex = columnIndex(table, covariate.id);
+      const groupIndex = columnIndex(table, grouping.id);
+
+      const byGroup = new Map<string, { y: number[]; x: number[] }>();
+      let dropped = 0;
+      for (const row of table.rows) {
+        const y = numericCell(row[outcomeIndex]);
+        const x = numericCell(row[covariateIndex]);
+        const label = String(row[groupIndex] ?? '').trim();
+        if (y === null || x === null || !label) { dropped += 1; continue; }
+        if (!byGroup.has(label)) byGroup.set(label, { y: [], x: [] });
+        byGroup.get(label)!.y.push(y);
+        byGroup.get(label)!.x.push(x);
+      }
+
+      const names = [...byGroup.keys()];
+      if (names.length < 2) {
+        return { ...base, error: `Needs at least two groups in "${grouping.name}"; ${names.length} usable group(s) were found.` };
+      }
+
+      const raw: any = regression.ancova(
+        names.map((name) => byGroup.get(name)!.y),
+        names.map((name) => byGroup.get(name)!.x)
+      );
+
+      return {
+        ...base,
+        raw: { ...raw, groupNames: names },
+        pValue: raw.groupPValue,
+        summary: [
+          { label: 'Group effect', value: formatP(raw.groupPValue), note: `F(${raw.groupDf}, ${raw.residualDf}) = ${formatNumber(raw.groupF, 3)}` },
+          { label: 'Covariate', value: formatP(raw.covariatePValue), note: `F(1, ${raw.residualDf}) = ${formatNumber(raw.covariateF, 3)}` },
+          { label: 'Slope', value: formatNumber(raw.slope), note: `per unit of ${covariate.name}` },
+        ],
+        tables: [{
+          title: `Means adjusted to the average ${covariate.name}`,
+          columns: ['Group', 'n', 'Raw mean', 'Adjusted mean'],
+          rows: raw.adjustedMeans.map((entry: any, index: number) => [
+            names[index], entry.n, formatNumber(entry.raw), formatNumber(entry.adjusted),
+          ]),
+        }],
+        warnings: [
+          'ANCOVA assumes the covariate relates to the outcome the same way in every group. If the lines are not parallel, the adjusted means do not mean much.',
+          ...(dropped > 0 ? [`${dropped} row(s) were left out because a selected column was blank.`] : []),
+        ],
+      };
+    }
+
+    if (method === 'cox') {
+      const subjects = survivalRows(table);
+      const candidates = predictorCandidates(table);
+      const predictors = analysis.options.columnIds
+        ? candidates.filter((column) => analysis.options.columnIds!.includes(column.id))
+        : candidates;
+      if (!predictors.length) {
+        return { ...base, error: 'Choose at least one predictor column. Add a numeric column to the survival table and select it below.' };
+      }
+      if (subjects.length < 3) {
+        return { ...base, error: `Needs at least three subjects with a time and a 0/1 event; this table has ${subjects.length}.` };
+      }
+
+      const timeIndex = columnIndex(table, roleColumn(table, 'time')!.id);
+      const eventIndex = columnIndex(table, roleColumn(table, 'event')!.id);
+      const predictorIndices = predictors.map((column) => columnIndex(table, column.id));
+
+      const rows: { time: number; event: number; x: number[] }[] = [];
+      let dropped = 0;
+      for (const row of table.rows) {
+        const time = numericCell(row[timeIndex]);
+        const event = numericCell(row[eventIndex]);
+        const x = predictorIndices.map((index) => numericCell(row[index]));
+        if (time === null || event === null || x.some((value) => value === null)) { dropped += 1; continue; }
+        rows.push({ time, event: event === 1 ? 1 : 0, x: x as number[] });
+      }
+
+      if (rows.length < 3) {
+        const empty = predictors.filter((column) =>
+          columnValues(table, column.id).length === 0);
+        return {
+          ...base,
+          error: empty.length
+            ? `${empty.map((column) => `"${column.name}"`).join(' and ')} holds no numbers, so it cannot be a predictor. A Cox model needs numeric predictors; code a two-level factor as 0 and 1.`
+            : `Only ${rows.length} subject(s) have a time, a 0/1 event and every predictor filled in.`,
+        };
+      }
+
+      const raw: any = regression.coxRegression(rows, predictors.map((column) => column.name));
+      return {
+        ...base,
+        raw,
+        pValue: raw.pValue,
+        summary: [
+          { label: 'Subjects', value: String(raw.n), note: `${raw.events} events` },
+          { label: 'Model P', value: formatP(raw.pValue), note: `likelihood-ratio χ² = ${formatNumber(raw.statistic, 3)}` },
+          ...raw.terms.slice(0, 3).map((term: any) => ({
+            label: `HR, ${term.term}`,
+            value: formatNumber(term.hazardRatio, 3),
+            note: `${formatNumber(term.hazardRatioConfidenceInterval95[0], 2)} to ${formatNumber(term.hazardRatioConfidenceInterval95[1], 2)}`,
+          })),
+        ],
+        tables: [{
+          title: 'Hazard ratios',
+          columns: ['Term', 'Coefficient', 'SE', 'Hazard ratio', '95% CI', 'P value'],
+          rows: raw.terms.map((term: any) => [
+            term.term,
+            formatNumber(term.estimate, 4),
+            formatNumber(term.standardError, 4),
+            formatNumber(term.hazardRatio, 4),
+            `${formatNumber(term.hazardRatioConfidenceInterval95[0], 3)} to ${formatNumber(term.hazardRatioConfidenceInterval95[1], 3)}`,
+            formatP(term.pValue),
+          ]),
+        }],
+        warnings: [
+          raw.concordanceNote,
+          ...(dropped > 0 ? [`${dropped} row(s) were left out because a value was missing.`] : []),
+        ],
+      };
+    }
+
     if (method === 'resourceequation') {
       const raw: any = agreement.resourceEquation({
         groups: analysis.options.designGroups ?? Math.max(2, columns.length),
