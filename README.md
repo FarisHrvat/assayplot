@@ -58,7 +58,9 @@ carries a SHA-256 of every data table beside the analysis that used it, so a
 reviewer can confirm the numbers analysed were the numbers supplied.
 
 Projects are a ZIP of readable JSON, unzip one and read your data without
-AssayPlot installed. Work is autosaved and offered back after a crash.
+AssayPlot installed. Work is autosaved and offered back after a crash. Reports
+export as HTML or Markdown, or go straight to a page in your own Notion
+workspace using an integration you create.
 
 Not built yet: repeated-measures ANOVA, three-way ANOVA, mixed models, Cox
 regression, confidence intervals on dose–response parameters, and subcolumn

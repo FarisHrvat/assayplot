@@ -28,6 +28,8 @@
     "vite": "^7.3.6"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-http": "^2.6.0",
     "fflate": "^0.8.3",
     "immer": "^11.1.18",
     "react": "^19.2.8",

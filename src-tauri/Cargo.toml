@@ -15,6 +15,10 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+# Notion's API sends no CORS headers, so a webview cannot call it directly.
+# Requests go out through Rust instead, restricted to api.notion.com by the
+# capability in capabilities/.
+tauri-plugin-http = "2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

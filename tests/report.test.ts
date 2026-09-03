@@ -82,3 +82,16 @@ test('a deleted table leaves an explained gap rather than a crash', async () => 
   const report = await buildReport({ ...project, tables: [] });
   assert.match(report.analyses[0].error ?? '', /deleted/);
 });
+
+test('a Notion page id is recovered from a pasted URL', async () => {
+  const { normalisePageId } = await import('../src/app/notion.ts');
+  const expected = '1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d';
+  assert.equal(normalisePageId('1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d'), expected);
+  assert.equal(normalisePageId(expected), expected);
+  assert.equal(
+    normalisePageId('https://www.notion.so/Lab-notes-1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d?pvs=4'),
+    expected
+  );
+  assert.equal(normalisePageId('not a page'), null);
+  assert.equal(normalisePageId(''), null);
+});

@@ -48,18 +48,8 @@ jobs:
         run: Rscript validation/generate/reference.R
       - name: Fail if the committed values no longer match R
         run: |
-          # Compare the cases, not the R version stamp: a newer R on the runner
-          # than on the machine that committed the file is expected and fine.
-          # A changed *value* is not.
-          git show HEAD:validation/fixtures/reference.json | jq -S '.cases' > /tmp/committed.json
-          jq -S '.cases' validation/fixtures/reference.json > /tmp/regenerated.json
-          if ! diff -q /tmp/committed.json /tmp/regenerated.json >/dev/null; then
-            echo "::error::The committed fixtures no longer match what R produces."
-            echo "Either a procedure changed, or the fixtures were edited by hand."
-            diff /tmp/committed.json /tmp/regenerated.json | head -40
-            exit 1
-          fi
-          echo "Committed values still match R $(Rscript -e 'cat(as.character(getRversion()))')."
+          git show HEAD:validation/fixtures/reference.json > /tmp/committed.json
+          node scripts/compare-fixtures.mjs /tmp/committed.json validation/fixtures/reference.json
       - name: Run the suite against the freshly generated fixtures
         run: npm test
 
