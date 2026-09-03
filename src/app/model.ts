@@ -446,6 +446,8 @@ export interface AnalysisResult {
 }
 
 function formatNumber(value: unknown, digits = 4): string {
+  if (typeof value === 'number' && value === Infinity) return '∞';
+  if (typeof value === 'number' && value === -Infinity) return '−∞';
   if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
   if (value !== 0 && Math.abs(value) < 1e-4) return value.toExponential(2);
   const rounded = Number(value.toFixed(digits));
@@ -493,7 +495,55 @@ function isTwoGroupTest(method: Method): boolean {
   return ['welch', 'student', 'paired', 'mannwhitney', 'wilcoxon'].includes(method);
 }
 
+/**
+ * Largest magnitude a value may have before sums of squares overflow.
+ *
+ * A double tops out near 1.8e308, so squaring anything past about 1e154 gives
+ * Infinity and every statistic built on it becomes NaN. Values this large are
+ * real - a broken instrument export, a spreadsheet with a stray exponent - and
+ * the app has to say so rather than print a dash.
+ */
+const MAX_SAFE_MAGNITUDE = 1e150;
+
+function overflowRisk(values: number[]): number | null {
+  for (const value of values) {
+    if (Math.abs(value) > MAX_SAFE_MAGNITUDE) return value;
+  }
+  return null;
+}
+
+/**
+ * Runs an analysis and enforces the invariants the rest of the app relies on:
+ * a p-value is a probability or absent, and a result never presents a NaN as a
+ * finding. Anything that slips through the individual guards is converted into
+ * an explanation here rather than reaching the screen.
+ */
 export function runAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
+  const result = computeAnalysis(table, analysis);
+  if (result.error) return result;
+
+  const pValueIsBroken = result.pValue !== null && !Number.isFinite(result.pValue);
+  const comparisonIsBroken = result.comparisons.some(
+    (comparison) => !Number.isFinite(comparison.pValue) || !Number.isFinite(comparison.pAdjusted)
+  );
+  if (!pValueIsBroken && !comparisonIsBroken) return result;
+
+  // Almost always overflow from an extreme value; say so if we can point at one.
+  const extreme = overflowRisk(
+    analysisColumns(table, analysis).flatMap((column) => columnValues(table, column.id))
+  );
+  return {
+    ...result,
+    pValue: null,
+    comparisons: [],
+    summary: [],
+    error: extreme !== null
+      ? `A value of ${extreme.toExponential(2)} is too large for this calculation — squaring it exceeds what a computer can represent, so the result would be meaningless. Check the units, or rescale the column.`
+      : 'This calculation did not produce a usable number for these data. Check for extreme values, or for a column where every value is identical.',
+  };
+}
+
+function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
   const base: AnalysisResult = { ...EMPTY, method: methodInfo(analysis.method).label };
 
   try {
@@ -623,7 +673,10 @@ export function runAnalysis(table: DataTable, analysis: Analysis): AnalysisResul
     if (method === 'twoway') {
       const rows = groupedRows(table);
       if (rows.length < 4) {
-        return { ...base, error: 'Needs a row-factor label in the first column and numbers in the others.' };
+        return {
+          ...base,
+          error: `Needs a row-factor label in the first column and numbers in the others; only ${rows.length} usable observation(s) were found.`,
+        };
       }
       const raw: any = stats.twoWayAnova(rows);
       const rowFactor = labelColumn(table)?.name ?? 'Row factor';
@@ -656,7 +709,16 @@ export function runAnalysis(table: DataTable, analysis: Analysis): AnalysisResul
     if (method === 'survival') {
       const subjects = survivalRows(table);
       if (subjects.length < 2) {
-        return { ...base, error: 'Needs at least two rows with a time and a 0/1 event indicator.' };
+        return {
+          ...base,
+          error: `Needs at least two rows with a non-negative time and a 0/1 event indicator; this table has ${subjects.length}. Censored subjects are 0, subjects that had the event are 1.`,
+        };
+      }
+      if (!subjects.some((subject) => subject.event === 1)) {
+        return {
+          ...base,
+          error: 'No subject had the event, so there is no survival curve to estimate. The event column marks 1 for the event and 0 for censored.',
+        };
       }
       const groupNames = [...new Set(subjects.map((subject) => subject.group))];
       const curves = groupNames.map((name) => {
@@ -733,6 +795,19 @@ export function runAnalysis(table: DataTable, analysis: Analysis): AnalysisResul
         };
       }
 
+      // A zero row or column total makes an expected count zero, and the
+      // statistic divides by it.
+      const rowTotals = counts.map((row) => row.reduce((sum, value) => sum + value, 0));
+      const columnTotals = counts[0].map((_, index) => counts.reduce((sum, row) => sum + row[index], 0));
+      const emptyRow = rowTotals.indexOf(0);
+      const emptyColumn = columnTotals.indexOf(0);
+      if (emptyRow >= 0) {
+        return { ...base, error: `Row ${emptyRow + 1} totals zero. A chi-square test cannot use a category in which nothing was observed — remove the row, or pool it with another.` };
+      }
+      if (emptyColumn >= 0) {
+        return { ...base, error: `Column "${labels[emptyColumn]}" totals zero. A chi-square test cannot use a category in which nothing was observed — remove the column, or pool it with another.` };
+      }
+
       const raw: any = stats.chiSquareTest(counts, { yates: counts.length === 2 && columns.length === 2 });
       const warnings: string[] = [];
       if (raw.minimumExpected < 5) {
@@ -761,7 +836,12 @@ export function runAnalysis(table: DataTable, analysis: Analysis): AnalysisResul
       const target = columns[0];
       if (!target) return { ...base, error: 'Choose a Y column to model.' };
       const { x, y } = xyPairs(table, target.id);
-      if (x.length < 3) return { ...base, error: 'Needs at least three complete XY pairs.' };
+      if (x.length < 3) {
+        return {
+          ...base,
+          error: `Needs at least three rows with a number in both X and "${target.name}"; this table has ${x.length}.`,
+        };
+      }
 
       if (method === 'regression') {
         const raw: any = stats.linearRegression(x, y);
@@ -913,6 +993,24 @@ export function runAnalysis(table: DataTable, analysis: Analysis): AnalysisResul
       if (groups.some((values) => values.length < 2)) {
         return { ...base, error: 'Every column needs at least two numeric values.' };
       }
+      // With no variation anywhere, F is 0/0. With variation between groups but
+      // none within, F is finite/0. Both are real situations in a lab - three
+      // wells all reading exactly 100 - and neither may surface as NaN.
+      const everyValue = groups.flat();
+      if (new Set(everyValue).size === 1) {
+        return {
+          ...base,
+          error: `Every value in these columns is ${everyValue[0]}. There is no variation to partition, so no test can be run.`,
+        };
+      }
+      const withinVariation = groups.some((values) => new Set(values).size > 1);
+      if (!withinVariation) {
+        return {
+          ...base,
+          error: 'Every column is constant, so there is no within-group variation to compare the differences against. An F ratio would be infinite. Check whether replicates were entered.',
+        };
+      }
+
       const raw: any = method === 'anova' ? stats.oneWayAnova(groups) : stats.kruskalWallis(groups);
       const correction = analysis.options.correction ?? (method === 'anova' ? 'tukey' : 'dunn');
 

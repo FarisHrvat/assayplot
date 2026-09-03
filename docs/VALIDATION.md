@@ -83,11 +83,34 @@ was found by comparing against R:
 | `twoWayAnova` F tail computed as `1 − I_x` | Wrong from the 8th significant figure |
 | 4PL model written as `(x/EC50)^hill`, inverting Top and Bottom | A 5 → 100 response reported as Top = 5, Bottom = 100 |
 | Dose–response passed log₁₀(x) to a fitter expecting linear concentrations | Any dose below 1 rejected; EC50 wrong when it ran |
+| ANOVA on data with no variation divided 0 by 0 | `p = NaN` shown as an empty dash rather than an explanation |
+| Chi-square with an all-zero row or column divided by a zero expected count | Same |
+| Values past ~1e154 overflowed every sum of squares | Statistic and p-value silently became NaN |
 
 The last two are worth dwelling on: the fit was numerically perfect either way,
 so `R²` and the EC50 both looked right. Only an assertion on the *labels* caught
 it. A test suite that only checks the numbers a procedure is famous for will miss
 this class of bug.
+
+## Property tests
+
+Beyond the fixtures, `tests/fuzz.test.ts` throws thousands of awkward tables at
+every analysis — blanks, stray text, zeroes, negatives, values at 1e300 and
+1e-300, single rows, columns of identical values — and asserts the invariants
+that must hold whatever the input:
+
+- Nothing throws.
+- A p-value is a probability or absent. Never NaN, never outside [0, 1].
+- Every result either reports something or explains why it cannot.
+- Nothing a scientist reads is NaN or Infinity.
+- Every refusal names something actionable, not "invalid input".
+- An analysis is deterministic and never mutates the table it was given.
+
+These found three further defects: ANOVA dividing 0 by 0 when every value is
+identical, chi-square dividing by a zero expected count, and arithmetic overflow
+past about 1e154 turning every statistic into NaN. `runAnalysis` now enforces
+the p-value invariant globally, so anything not caught by a specific guard
+becomes an explanation rather than reaching the screen.
 
 ## Edge cases every procedure is tested against
 

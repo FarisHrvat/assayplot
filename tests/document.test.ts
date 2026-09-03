@@ -260,8 +260,10 @@ test('empty rows do not become (0, 0) points in an XY table', () => {
     id: 'a', name: 't', tableId: table.id, method: 'regression', options: {},
   };
   const result = runAnalysis(table, analysis);
-  assert.match(result.error ?? '', /three complete XY pairs/,
+  // Two real rows plus two blank ones must count as two, not four.
+  assert.match(result.error ?? '', /at least three rows/,
     'blank rows must not be counted as observations');
+  assert.match(result.error ?? '', /has 2\b/, 'the message should say how many were usable');
 });
 
 test('a partly blank XY table uses only the complete rows', () => {
