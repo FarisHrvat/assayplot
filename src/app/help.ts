@@ -270,6 +270,95 @@ export const METHOD_HELP: Record<Method, MethodHelp> = {
     reports: "Usually nothing directly, but it justifies choosing Welch over Student's.",
   },
 
+  mcnemar: {
+    answers: 'Did the same subjects change between two conditions?',
+    needs: 'A 2 × 2 table of paired counts: both positive, both negative, and the two ways of disagreeing.',
+    assumes: ['Each count is a pair of observations on the same subject, not two independent subjects.'],
+    doesNot: ['Use the agreeing pairs. Only the ones who changed carry information, which is why the two diagonal cells never enter the statistic.'],
+    how: [
+      'Lay out a 2 × 2 table of counts.',
+      "Pick McNemar's test. Below about 25 discordant pairs the exact binomial is used instead of the chi-square approximation.",
+    ],
+    reports: 'The counts of each kind of discordant pair, the statistic and P, and the odds ratio.',
+    insteadUse: "A chi-square test if the two samples are independent rather than paired — McNemar's is for the same subjects twice.",
+  },
+
+  kappa: {
+    answers: 'Do two raters agree more than chance would give?',
+    needs: 'A square table of counts: the same categories down and across, each cell one pair of verdicts.',
+    assumes: ['Both raters used the same categories.', 'Subjects were rated independently of one another.'],
+    doesNot: [
+      'Say who is right. Two raters can agree perfectly and both be wrong.',
+      'Handle ordered categories unless you choose a weighting: unweighted kappa treats being one category out the same as being three out.',
+    ],
+    how: ['Enter the cross-tabulation of the two raters.', "Pick Cohen's kappa."],
+    reports: 'Kappa with its 95% confidence interval and the number of subjects. Raw percentage agreement alone is misleading when one category dominates.',
+  },
+
+  blandaltman: {
+    answers: 'Can this new method replace the old one?',
+    needs: 'Two columns measuring the same subjects by two methods, one subject per row.',
+    assumes: ['The differences are roughly normal.', 'Rows are aligned: each row is one subject measured twice.'],
+    doesNot: [
+      'Tell you whether the agreement is good enough. That is a clinical judgement about how large a difference matters, made before you look.',
+      'Work as a correlation. Two methods can correlate perfectly and disagree by a constant amount.',
+    ],
+    how: [
+      'Put the two methods in two columns.',
+      'Pick Bland–Altman, then plot it as a Bland–Altman figure to see the differences against the average.',
+    ],
+    reports: 'The bias with its confidence interval and the 95% limits of agreement, plus whether the disagreement changes across the range.',
+  },
+
+  tost: {
+    answers: 'Are these two groups close enough to be called equivalent?',
+    needs: 'Two columns, and a bound: the largest difference you would still call equivalent.',
+    assumes: ['The bound was decided before seeing the data, on scientific grounds rather than statistical ones.'],
+    doesNot: ['Follow from a non-significant t-test. Failing to find a difference is not evidence of equivalence, which is exactly the gap this fills.'],
+    how: [
+      'Decide the bound first and write down why.',
+      'Pick Equivalence (TOST) and enter it under Options.',
+    ],
+    reports: 'The difference with its 90% confidence interval, the bound, and the larger of the two one-sided P values.',
+  },
+
+  cochranq: {
+    answers: 'Do these studies agree enough to pool?',
+    needs: 'One row per study: its effect in the first column, that effect\'s standard error in the second.',
+    assumes: ['The effects are on the same scale, and each standard error belongs to its effect.'],
+    doesNot: ['Fix heterogeneity. A high I² means the studies are measuring different things, and a pooled number may not mean much.'],
+    how: ['One row per study, effect and standard error.', "Pick Meta-analysis. Both fixed-effect and random-effects summaries are given."],
+    reports: 'Q with its degrees of freedom and P, I², and the pooled effect with its confidence interval. Say which model you quote and why.',
+  },
+
+  mantelhaenszel: {
+    answers: 'What is the pooled odds ratio across strata?',
+    needs: 'One row per stratum, four columns of counts: a, b, c, d.',
+    assumes: ['The odds ratio is roughly the same in every stratum.'],
+    doesNot: ['Detect that the strata disagree. If they do, a single pooled odds ratio is the wrong summary.'],
+    how: ['One row per site, batch or experiment, four count columns.', 'Pick Mantel–Haenszel.'],
+    reports: 'The pooled odds ratio with its confidence interval, and the test statistic. Pooling the raw counts instead would let Simpson\'s paradox through, which is the reason this test exists.',
+  },
+
+  resourceequation: {
+    answers: 'Roughly how many animals per group?',
+    needs: 'Nothing but the number of groups and the number per group you are considering.',
+    assumes: ['You have no effect size to power against. If you do, a power calculation is better.'],
+    doesNot: ['Replace a power calculation. It is a sanity check, not a design.'],
+    how: ['Pick Resource equation and enter the groups and the number per group.', 'Aim for residual degrees of freedom between 10 and 20.'],
+    reports: 'For an ethics application, the residual degrees of freedom and why no effect size was available.',
+  },
+
+  dagostino: {
+    answers: 'Is there evidence these values are not normal, from their shape?',
+    needs: 'Twenty or more values in a column.',
+    assumes: ['Independent observations.'],
+    doesNot: ['Work below twenty values, where Shapiro–Wilk is the better choice.'],
+    how: ["Pick Normality (D'Agostino–Pearson). Skewness and kurtosis are combined into one omnibus test."],
+    reports: 'Usually nothing directly; it informs the choice of test.',
+    insteadUse: 'Shapiro–Wilk for smaller samples, which is most lab experiments.',
+  },
+
   outlier: {
     answers: 'Is the most extreme value further out than sampling alone explains?',
     needs: 'Any Column table with three or more values per column.',
