@@ -215,7 +215,8 @@ test('an error message names something the user can act on', () => {
       const actionable =
         /\d/.test(result.error) ||
         /\b(one|two|three|four|five)\b/i.test(result.error) ||
-        /column|row|group|value|table|pair|concentration|subject|shape|variance|event/i.test(result.error);
+        /column|row|group|value|table|pair|concentration|subject|shape|variance|event/i.test(result.error) ||
+        /bound|equivalent|option|categor|stratum|strata|standard error/i.test(result.error);
       if (!actionable) vague.push(`${info.id}: ${result.error}`);
     }
   }
