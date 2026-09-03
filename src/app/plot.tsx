@@ -180,7 +180,7 @@ function formatTick(value: number): string {
 
 const MARGIN = { top: 40, right: 26, bottom: 58, left: 66 };
 
-export type PlotGroup = 'Compare groups' | 'Distribution' | 'X versus Y' | 'Matrix' | 'Parts of a whole' | 'Survival';
+export type PlotGroup = 'Compare groups' | 'Distribution' | 'X versus Y' | 'Matrix' | 'Parts of a whole' | 'Survival' | 'Agreement';
 
 export interface PlotKind {
   id: PlotType;
@@ -219,9 +219,12 @@ export const PLOT_KINDS: PlotKind[] = [
   { id: 'donut', label: 'Donut', group: 'Parts of a whole', shape: 'column' },
 
   { id: 'survival', label: 'Kaplan–Meier curve', group: 'Survival', shape: 'survival' },
+
+  { id: 'blandaltman', label: 'Bland–Altman agreement', group: 'Agreement', shape: 'column' },
+  { id: 'forest', label: 'Forest plot (meta-analysis)', group: 'Agreement', shape: 'column' },
 ];
 
-export const PLOT_GROUPS: PlotGroup[] = ['Compare groups', 'Distribution', 'X versus Y', 'Matrix', 'Parts of a whole', 'Survival'];
+export const PLOT_GROUPS: PlotGroup[] = ['Compare groups', 'Distribution', 'X versus Y', 'Matrix', 'Parts of a whole', 'Survival', 'Agreement'];
 
 export function plotsForShape(shape: TableShape): PlotKind[] {
   // A Grouped table plots like a Column table: its value columns are the series.
@@ -298,6 +301,8 @@ export function Plot(props: PlotProps) {
   );
 
   if (plotType === 'survival') return canvas(<SurvivalPlot {...shared} />);
+  if (plotType === 'blandaltman') return canvas(<BlandAltmanPlot {...shared} />);
+  if (plotType === 'forest') return canvas(<ForestPlot {...shared} />);
   if (plotType === 'heatmap' || plotType === 'correlation') return canvas(<MatrixPlot {...shared} />);
   if (plotType === 'pie' || plotType === 'donut') return canvas(<PiePlot {...shared} />);
   if (DISTRIBUTION_PLOTS.includes(plotType)) return canvas(<DistributionPlot {...shared} />);
@@ -1020,6 +1025,179 @@ export function LayoutFigure({
  * a staircase rather than interpolated - joining the points with straight lines
  * would imply a smooth decline that the estimator does not claim.
  */
+/**
+ * Difference against average, with the bias and the 95% limits of agreement.
+ * Two methods can correlate perfectly and still disagree by a constant amount,
+ * which is what this shows and a scatter of one against the other hides.
+ */
+function BlandAltmanPlot(props: any) {
+  const { table, figure, plotLeft, plotRight, plotTop, plotBottom, font, height } = props;
+  const style: FigureStyle = figure.style;
+  const columns = valueColumns(table);
+  if (columns.length < 2) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Needs two columns: the same subjects measured by two methods" />;
+  }
+
+  const first = columnValues(table, columns[0].id);
+  const second = columnValues(table, columns[1].id);
+  const n = Math.min(first.length, second.length);
+  if (n < 3) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Needs at least three subjects measured by both methods" />;
+  }
+
+  const differences = Array.from({ length: n }, (_, i) => first[i] - second[i]);
+  const averages = Array.from({ length: n }, (_, i) => (first[i] + second[i]) / 2);
+  const bias = differences.reduce((sum, value) => sum + value, 0) / n;
+  const sd = Math.sqrt(differences.reduce((sum, value) => sum + (value - bias) ** 2, 0) / (n - 1));
+  const upper = bias + 1.96 * sd;
+  const lower = bias - 1.96 * sd;
+
+  const xLow = style.xMin ?? Math.min(...averages);
+  const xHigh = style.xMax ?? Math.max(...averages);
+  const pad = Math.max(sd * 0.6, (Math.max(...differences) - Math.min(...differences)) * 0.15, 1e-9);
+  const yLow = style.yMin ?? Math.min(lower, ...differences) - pad;
+  const yHigh = style.yMax ?? Math.max(upper, ...differences) + pad;
+
+  const xScale = makeScale(xLow, xHigh, plotLeft, plotRight);
+  const yScale = makeScale(yLow, yHigh, plotBottom, plotTop);
+  const colour = colorFor(style, columns[0].id, 0);
+
+  const band = (value: number, label: string, dash: string) => (
+    <g key={label}>
+      <line x1={plotLeft} x2={plotRight} y1={yScale.toPixel(value)} y2={yScale.toPixel(value)}
+        stroke="#666" strokeWidth={1.2} strokeDasharray={dash} />
+      <text x={plotRight - 2} y={yScale.toPixel(value) - 4} textAnchor="end" fontSize={font - 2} fill="#666">
+        {label} {formatTick(Number(value.toFixed(4)))}
+      </text>
+    </g>
+  );
+
+  return (
+    <>
+      <Grid style={style} xTicks={niceTicks(xLow, xHigh)} yTicks={niceTicks(yLow, yHigh)}
+        xScale={xScale} yScale={yScale}
+        plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
+      <YAxis {...props} ticks={niceTicks(yLow, yHigh)} yScale={yScale} />
+      <XAxisNumeric {...props} ticks={niceTicks(xLow, xHigh)} xScale={xScale}
+        fallbackLabel={`Mean of ${columns[0].name} and ${columns[1].name}`} />
+
+      {band(upper, '+1.96 SD', '6 3')}
+      {band(bias, 'bias', 'none')}
+      {band(lower, '−1.96 SD', '6 3')}
+
+      {averages.map((value, i) => (
+        <Marker key={i} x={xScale.toPixel(value)} y={yScale.toPixel(differences[i])}
+          r={style.pointSize} shape={shapeFor(0)} fill={colour} fillOpacity={0.8}
+          stroke="#fff" strokeWidth={0.8}>
+          <title>{`subject ${i + 1}: difference ${differences[i].toFixed(4)}`}</title>
+        </Marker>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Forest plot: one row per study, its effect and confidence interval, with the
+ * pooled estimate as a diamond. Expects the effect in the first column and its
+ * standard error in the second.
+ */
+function ForestPlot(props: any) {
+  const { table, figure, plotLeft, plotRight, plotTop, plotBottom, font } = props;
+  const style: FigureStyle = figure.style;
+  const columns = valueColumns(table);
+  if (columns.length < 2) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Needs two columns: the effect, and its standard error" />;
+  }
+
+  const effects = columnValues(table, columns[0].id);
+  const errors = columnValues(table, columns[1].id);
+  const n = Math.min(effects.length, errors.length);
+  if (n < 2 || errors.slice(0, n).some((value) => !(value > 0))) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Needs at least two studies, each with a standard error above zero" />;
+  }
+
+  const studies = Array.from({ length: n }, (_, i) => ({
+    effect: effects[i],
+    low: effects[i] - 1.96 * errors[i],
+    high: effects[i] + 1.96 * errors[i],
+    weight: 1 / errors[i] ** 2,
+  }));
+  const totalWeight = studies.reduce((sum, study) => sum + study.weight, 0);
+  const pooled = studies.reduce((sum, study) => sum + study.weight * study.effect, 0) / totalWeight;
+  const pooledError = Math.sqrt(1 / totalWeight);
+
+  const xLow = style.xMin ?? Math.min(...studies.map((study) => study.low), pooled - 1.96 * pooledError);
+  const xHigh = style.xMax ?? Math.max(...studies.map((study) => study.high), pooled + 1.96 * pooledError);
+  const xScale = makeScale(xLow, xHigh, plotLeft, plotRight);
+
+  const rows = n + 1;
+  const step = (plotBottom - plotTop) / rows;
+  const rowY = (index: number) => plotTop + step * (index + 0.5);
+  const maxWeight = Math.max(...studies.map((study) => study.weight));
+
+  return (
+    <>
+      <Grid style={style} xTicks={niceTicks(xLow, xHigh)} yTicks={[]} xScale={xScale} yScale={makeScale(0, 1, plotBottom, plotTop)}
+        plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
+
+      {/* No-effect line, wherever zero falls. */}
+      {xLow < 0 && xHigh > 0 && (
+        <line x1={xScale.toPixel(0)} x2={xScale.toPixel(0)} y1={plotTop} y2={plotBottom}
+          stroke="#999" strokeWidth={1} strokeDasharray="4 3" />
+      )}
+
+      {studies.map((study, index) => {
+        const y = rowY(index);
+        const size = 3 + 7 * Math.sqrt(study.weight / maxWeight);
+        const colour = colorFor(style, columns[0].id, 0);
+        return (
+          <g key={index}>
+            <line x1={xScale.toPixel(study.low)} x2={xScale.toPixel(study.high)} y1={y} y2={y}
+              stroke={colour} strokeWidth={1.4} />
+            <rect x={xScale.toPixel(study.effect) - size} y={y - size}
+              width={size * 2} height={size * 2} fill={colour}>
+              <title>{`study ${index + 1}: ${study.effect.toFixed(4)} (${study.low.toFixed(4)} to ${study.high.toFixed(4)})`}</title>
+            </rect>
+            <text x={plotLeft - 8} y={y + 4} textAnchor="end" fontSize={font - 2} fill="#555">
+              {index + 1}
+            </text>
+          </g>
+        );
+      })}
+
+      {/* Pooled estimate. */}
+      {(() => {
+        const y = rowY(n);
+        const left = xScale.toPixel(pooled - 1.96 * pooledError);
+        const right = xScale.toPixel(pooled + 1.96 * pooledError);
+        const middle = xScale.toPixel(pooled);
+        return (
+          <g>
+            <polygon points={`${left},${y} ${middle},${y - 7} ${right},${y} ${middle},${y + 7}`}
+              fill="#111">
+              <title>{`pooled: ${pooled.toFixed(4)}`}</title>
+            </polygon>
+            <text x={plotLeft - 8} y={y + 4} textAnchor="end" fontSize={font - 2} fontWeight={600} fill="#333">
+              pooled
+            </text>
+          </g>
+        );
+      })()}
+
+      <line x1={plotLeft} x2={plotRight} y1={plotBottom} y2={plotBottom} stroke="#333" />
+      {niceTicks(xLow, xHigh).map((tick) => (
+        <text key={tick} x={xScale.toPixel(tick)} y={plotBottom + 18} textAnchor="middle"
+          fontSize={font - 1} fill="#555">{formatTick(tick)}</text>
+      ))}
+      <XLabelText {...props} x={(plotLeft + plotRight) / 2} y={props.xLabelY} fallbackLabel="Effect" />
+    </>
+  );
+}
+
 function SurvivalPlot(props: any) {
   const { table, figure, plotLeft, plotRight, plotTop, plotBottom, height, font, selected, onSelect } = props;
   const style: FigureStyle = figure.style;

@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs';
 import * as stats from '../src/core/stats.js';
 import * as posthoc from '../src/core/posthoc.js';
 import * as diagnostics from '../src/core/diagnostics.js';
+import * as agreement from '../src/core/agreement.js';
 
 const fixtures = JSON.parse(
   readFileSync(new URL('../validation/fixtures/reference.json', import.meta.url), 'utf8')
@@ -66,6 +67,13 @@ const RUNNERS = {
   logRankTest: ({ timesA, eventsA, timesB, eventsB }) =>
     stats.logRankTest(timesA, eventsA, timesB, eventsB),
   kaplanMeier: ({ times, events }) => stats.kaplanMeier(times, events),
+
+  mcnemarTest: ({ table }) => agreement.mcnemarTest(table),
+  cohensKappa: ({ table }) => agreement.cohensKappa(table),
+  tost: ({ a, b, bound }) => agreement.tost(a, b, bound),
+  blandAltman: ({ a, b }) => agreement.blandAltman(a, b),
+  mantelHaenszel: ({ strata }) => agreement.mantelHaenszel(strata),
+  cochranQ: ({ effects, standardErrors }) => agreement.cochranQ(effects, standardErrors),
 
   friedmanTest: ({ matrix }) =>
     stats.friedmanTest(matrix[0].map((_, index) => matrix.map((row) => row[index]))),

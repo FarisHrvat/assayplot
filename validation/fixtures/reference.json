@@ -630,6 +630,125 @@
         "value": 50
       },
       "note": "single most extreme value"
+    },
+    {
+      "id": "mcnemar",
+      "procedure": "mcnemarTest",
+      "input": {
+        "table": [
+          [100, 40],
+          [20, 150]
+        ]
+      },
+      "expected": {
+        "statistic": 6.01666666666667,
+        "df": 1,
+        "pValue": 0.0141713882540123
+      },
+      "note": "continuity corrected, above the exact threshold"
+    },
+    {
+      "id": "mcnemar_exact",
+      "procedure": "mcnemarTest",
+      "input": {
+        "table": [
+          [10, 5],
+          [1, 20]
+        ]
+      },
+      "expected": {
+        "pValue": 0.21875,
+        "exact": true
+      },
+      "note": "few discordant pairs, so the exact binomial"
+    },
+    {
+      "id": "kappa",
+      "procedure": "cohensKappa",
+      "input": {
+        "table": [
+          [20, 5],
+          [10, 15]
+        ]
+      },
+      "expected": {
+        "kappa": 0.4,
+        "observedAgreement": 0.7,
+        "expectedAgreement": 0.5
+      },
+      "note": "two raters, two categories"
+    },
+    {
+      "id": "tost",
+      "procedure": "tost",
+      "input": {
+        "a": [10, 11, 12, 10.5, 11.5],
+        "b": [10.2, 10.8, 11.9, 10.6, 11.3],
+        "bound": 1
+      },
+      "expected": {
+        "pValue": 0.0357455970118647,
+        "pLower": 0.0273534458145365,
+        "pUpper": 0.0357455970118647
+      },
+      "note": "two one-sided tests against an equivalence bound of 1"
+    },
+    {
+      "id": "blandaltman",
+      "procedure": "blandAltman",
+      "input": {
+        "a": [10, 12, 14, 16, 18, 20],
+        "b": [10.5, 11.8, 14.4, 15.6, 18.3, 19.7]
+      },
+      "expected": {
+        "bias": -0.0500000000000001,
+        "sd": 0.393700393700591,
+        "lowerLimit": -0.821652771653158,
+        "upperLimit": 0.721652771653158
+      },
+      "note": "bias and 95% limits of agreement"
+    },
+    {
+      "id": "mantelhaenszel",
+      "procedure": "mantelHaenszel",
+      "input": {
+        "strata": [
+          [
+            [10, 5],
+            [3, 12]
+          ],
+          [
+            [8, 7],
+            [4, 11]
+          ],
+          [
+            [12, 3],
+            [5, 10]
+          ]
+        ]
+      },
+      "expected": {
+        "oddsRatio": 5.6551724137931,
+        "statistic": 12.7370820668693,
+        "pValue": 0.000358476532471734
+      },
+      "note": "three strata pooled"
+    },
+    {
+      "id": "cochranq",
+      "procedure": "cochranQ",
+      "input": {
+        "effects": [0.2, 0.35, 0.1, 0.28],
+        "standardErrors": [0.08, 0.12, 0.09, 0.1]
+      },
+      "expected": {
+        "statistic": 3.35500892362901,
+        "df": 3,
+        "pValue": 0.340059517412261,
+        "iSquared": 10.581459892065,
+        "fixedEffect": 0.213516577907576
+      },
+      "note": "four studies, fixed-effect pooling"
     }
   ]
 }

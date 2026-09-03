@@ -295,7 +295,7 @@ function fUpperTail(f, df1, df2) {
   return incompleteBetaTail(df2 / (df2 + df1 * f), df2 / 2, df1 / 2);
 }
 
-function chiSquareUpperTail(value, df) {
+export function chiSquareUpperTail(value, df) {
   if (!Number.isFinite(value) || value <= 0) return 1;
   return regularizedGammaQ(df / 2, value / 2);
 }

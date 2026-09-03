@@ -276,6 +276,55 @@ add("grubbs", "grubbsTest", list(x = gr_x),
 
 # No timestamp: this file is committed and compared byte for byte, so anything
 # that changes between identical runs would make the drift check meaningless.
+# ---- agreement, paired counts, equivalence, meta-analysis --------------
+mc <- matrix(c(100, 40, 20, 150), 2, 2, byrow = TRUE)
+mct <- mcnemar.test(mc)
+add("mcnemar", "mcnemarTest", list(table = list(c(100, 40), c(20, 150))),
+    list(statistic = unname(mct$statistic), df = unname(mct$parameter), pValue = mct$p.value),
+    "continuity corrected, above the exact threshold")
+
+add("mcnemar_exact", "mcnemarTest", list(table = list(c(10, 5), c(1, 20))),
+    list(pValue = binom.test(1, 6, 0.5)$p.value, exact = TRUE),
+    "few discordant pairs, so the exact binomial")
+
+kt <- matrix(c(20, 5, 10, 15), 2, 2, byrow = TRUE)
+kn <- sum(kt)
+kpo <- sum(diag(kt)) / kn
+kpe <- sum(rowSums(kt) * colSums(kt)) / kn^2
+add("kappa", "cohensKappa", list(table = list(c(20, 5), c(10, 15))),
+    list(kappa = (kpo - kpe) / (1 - kpe), observedAgreement = kpo, expectedAgreement = kpe),
+    "two raters, two categories")
+
+ta <- c(10, 11, 12, 10.5, 11.5); tb <- c(10.2, 10.8, 11.9, 10.6, 11.3)
+t_low <- t.test(ta, tb, mu = -1, alternative = "greater")
+t_high <- t.test(ta, tb, mu = 1, alternative = "less")
+add("tost", "tost", list(a = ta, b = tb, bound = 1),
+    list(pValue = max(t_low$p.value, t_high$p.value),
+         pLower = t_low$p.value, pUpper = t_high$p.value),
+    "two one-sided tests against an equivalence bound of 1")
+
+bx <- c(10, 12, 14, 16, 18, 20); by <- c(10.5, 11.8, 14.4, 15.6, 18.3, 19.7)
+bd <- bx - by
+add("blandaltman", "blandAltman", list(a = bx, b = by),
+    list(bias = mean(bd), sd = sd(bd),
+         lowerLimit = mean(bd) - 1.96 * sd(bd), upperLimit = mean(bd) + 1.96 * sd(bd)),
+    "bias and 95% limits of agreement")
+
+mh_array <- array(c(10, 3, 5, 12, 8, 4, 7, 11, 12, 5, 3, 10), dim = c(2, 2, 3))
+mh <- mantelhaen.test(mh_array)
+add("mantelhaenszel", "mantelHaenszel",
+    list(strata = list(list(c(10, 5), c(3, 12)), list(c(8, 7), c(4, 11)), list(c(12, 3), c(5, 10)))),
+    list(oddsRatio = unname(mh$estimate), statistic = unname(mh$statistic), pValue = mh$p.value),
+    "three strata pooled")
+
+cy <- c(0.2, 0.35, 0.1, 0.28); cse <- c(0.08, 0.12, 0.09, 0.1); cw <- 1 / cse^2
+cpooled <- sum(cw * cy) / sum(cw)
+cq <- sum(cw * (cy - cpooled)^2); cdf <- length(cy) - 1
+add("cochranq", "cochranQ", list(effects = cy, standardErrors = cse),
+    list(statistic = cq, df = cdf, pValue = pchisq(cq, cdf, lower.tail = FALSE),
+         iSquared = max(0, (cq - cdf) / cq) * 100, fixedEffect = cpooled),
+    "four studies, fixed-effect pooling")
+
 out <- list(
   generatedBy = paste("R", getRversion()),
   note = "Golden values produced by R. Regenerate with validation/generate/reference.R.",

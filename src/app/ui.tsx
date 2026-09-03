@@ -1254,7 +1254,7 @@ function AnalysisView({ id }: { id: string }) {
             )}
           </section>
 
-          {(analysis.method === 'onesample' || analysis.method === 'doseresponse' || isGroupComparison) && (
+          {(['onesample', 'doseresponse', 'tost', 'kappa', 'resourceequation'].includes(analysis.method) || isGroupComparison) && (
             <section className="panel">
               <h3>Options</h3>
               {analysis.method === 'onesample' && (
@@ -1262,6 +1262,38 @@ function AnalysisView({ id }: { id: string }) {
                   <input type="number" value={analysis.options.hypothesised ?? 0}
                     onChange={(event) => setOption({ hypothesised: Number(event.target.value) || 0 })} />
                 </Field>
+              )}
+              {analysis.method === 'tost' && (
+                <Field label="Equivalence bound (± units of your data)" hintAlign="left" hint={
+                  <>The largest difference you would still call equivalent. Decide it
+                  before looking at the data, on scientific grounds.</>
+                }>
+                  <input type="number" step="any" value={analysis.options.equivalenceBound ?? ''}
+                    placeholder="e.g. 0.5"
+                    onChange={(event) => setOption({ equivalenceBound: Number(event.target.value) || 0 })} />
+                </Field>
+              )}
+              {analysis.method === 'kappa' && (
+                <Field label="Weighting">
+                  <select value={analysis.options.kappaWeights ?? 'unweighted'}
+                    onChange={(event) => setOption({ kappaWeights: event.target.value as any })}>
+                    <option value="unweighted">Unweighted — categories are unordered</option>
+                    <option value="linear">Linear — ordered categories</option>
+                    <option value="quadratic">Quadratic — ordered, large gaps matter more</option>
+                  </select>
+                </Field>
+              )}
+              {analysis.method === 'resourceequation' && (
+                <div className="field-row">
+                  <Field label="Groups">
+                    <input type="number" min={2} value={analysis.options.designGroups ?? 2}
+                      onChange={(event) => setOption({ designGroups: Number(event.target.value) || 2 })} />
+                  </Field>
+                  <Field label="Per group">
+                    <input type="number" min={1} value={analysis.options.designPerGroup ?? 5}
+                      onChange={(event) => setOption({ designPerGroup: Number(event.target.value) || 1 })} />
+                  </Field>
+                </div>
               )}
               {analysis.method === 'doseresponse' && (
                 <label className="check">

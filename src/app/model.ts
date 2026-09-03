@@ -11,6 +11,8 @@ import * as stats from '../core/stats.js';
 import * as posthoc from '../core/posthoc.js';
 // @ts-ignore
 import * as diagnostics from '../core/diagnostics.js';
+// @ts-ignore
+import * as agreement from '../core/agreement.js';
 
 export type Cell = number | string | null;
 
@@ -79,7 +81,15 @@ export type Method =
   | 'fisher'
   | 'twoway'
   | 'survival'
+  | 'mcnemar'
+  | 'kappa'
+  | 'tost'
+  | 'blandaltman'
+  | 'mantelhaenszel'
+  | 'cochranq'
+  | 'resourceequation'
   | 'normality'
+  | 'dagostino'
   | 'variance'
   | 'outlier';
 
@@ -96,6 +106,13 @@ export interface AnalysisOptions {
   hypothesised?: number;
   /** Treat the X column as log10 concentration in a dose-response fit. */
   logX?: boolean;
+  /** Largest difference still counted as equivalent, for TOST. */
+  equivalenceBound?: number;
+  /** Weighting for Cohen's kappa on ordered categories. */
+  kappaWeights?: 'unweighted' | 'linear' | 'quadratic';
+  /** Groups and subjects per group, for the resource equation. */
+  designGroups?: number;
+  designPerGroup?: number;
 }
 
 export interface Analysis {
@@ -113,7 +130,7 @@ export type PlotType =
   | 'scatter' | 'line' | 'area' | 'step' | 'bubble'
   | 'heatmap' | 'correlation'
   | 'pie' | 'donut'
-  | 'survival';
+  | 'survival' | 'blandaltman' | 'forest';
 
 export type ErrorBarKind = 'none' | 'sd' | 'sem' | 'ci95' | 'range';
 export type GridKind = 'none' | 'horizontal' | 'vertical' | 'both';
@@ -316,6 +333,7 @@ export function completeRows(table: DataTable, columnIds: string[]): number[][] 
 export type MethodFamily =
   | 'Describe' | 'One sample' | 'Two groups' | 'Three or more groups'
   | 'X versus Y' | 'Two factors' | 'Survival' | 'Categorical counts'
+  | 'Agreement' | 'Equivalence' | 'Meta-analysis' | 'Study design'
   | 'Assumptions and screening';
 
 export interface MethodInfo {
@@ -352,11 +370,23 @@ export const METHODS: MethodInfo[] = [
 
   { id: 'chisq', label: 'Chi-square test of counts', family: 'Categorical counts', assumes: 'Each cell is a count of independent observations, not a measurement.', minGroups: 2, maxGroups: Infinity, shapes: ['column'] },
   { id: 'fisher', label: "Fisher's exact test (2 × 2)", family: 'Categorical counts', assumes: 'A 2 × 2 table of counts. Exact, so it is safe with small numbers.', minGroups: 2, maxGroups: 2, shapes: ['column'] },
+  { id: 'mcnemar', label: "McNemar's test (paired counts)", family: 'Categorical counts', assumes: 'A 2 × 2 table of the same subjects counted twice. Only the ones who changed carry information.', minGroups: 2, maxGroups: 2, shapes: ['column'] },
+
+  { id: 'kappa', label: "Cohen's kappa (rater agreement)", family: 'Agreement', assumes: 'A square table of counts: the same categories down and across, one cell per pair of verdicts.', minGroups: 2, maxGroups: Infinity, shapes: ['column'] },
+  { id: 'blandaltman', label: 'Bland–Altman (method agreement)', family: 'Agreement', assumes: 'Two columns measuring the same subjects by two methods, one subject per row.', minGroups: 2, maxGroups: 2, shapes: ['column'] },
+
+  { id: 'tost', label: 'Equivalence (TOST)', family: 'Equivalence', assumes: 'Two groups and a bound you choose: the largest difference you would still call equivalent.', minGroups: 2, maxGroups: 2, shapes: ['column'] },
+
+  { id: 'cochranq', label: "Meta-analysis (Cochran's Q, I²)", family: 'Meta-analysis', assumes: 'One row per study: its effect in the first column and that effect\'s standard error in the second.', minGroups: 2, maxGroups: 2, shapes: ['column'] },
+  { id: 'mantelhaenszel', label: 'Mantel–Haenszel (pooled 2 × 2)', family: 'Meta-analysis', assumes: 'One row per stratum, four columns of counts: a, b, c, d.', minGroups: 4, maxGroups: 4, shapes: ['column'] },
+
+  { id: 'resourceequation', label: 'Resource equation (animal numbers)', family: 'Study design', assumes: 'No data: a rough check on group sizes when no effect size is available to power against.', minGroups: 1, maxGroups: Infinity, shapes: ['column', 'grouped', 'xy', 'survival'] },
 
   { id: 'twoway', label: 'Two-way ANOVA', family: 'Two factors', assumes: 'Two crossed factors with the same number of observations in every combination. Repeat a row label for replicates.', minGroups: 2, maxGroups: Infinity, shapes: ['grouped'] },
 
   { id: 'survival', label: 'Kaplan–Meier survival', family: 'Survival', assumes: 'One row per subject: a time, whether the event happened, and a group. Censored subjects are those still event-free at last follow-up.', minGroups: 1, maxGroups: Infinity, shapes: ['survival'] },
 
+  { id: 'dagostino', label: "Normality (D'Agostino–Pearson)", family: 'Assumptions and screening', assumes: 'Twenty or more values per column. Combines skewness and kurtosis.', minGroups: 1, maxGroups: Infinity, shapes: ['column'] },
   { id: 'normality', label: 'Normality (Shapiro–Wilk)', family: 'Assumptions and screening', assumes: 'Checks each column against a normal distribution.', minGroups: 1, maxGroups: Infinity, shapes: ['column'] },
   { id: 'variance', label: 'Equal variances (Levene, Bartlett)', family: 'Assumptions and screening', assumes: 'Checks whether the groups have comparable spread.', minGroups: 2, maxGroups: Infinity, shapes: ['column'] },
   { id: 'outlier', label: "Outlier screening (Grubbs')", family: 'Assumptions and screening', assumes: 'Finds the single most extreme value in a roughly normal column.', minGroups: 1, maxGroups: Infinity, shapes: ['column'] },
@@ -365,6 +395,7 @@ export const METHODS: MethodInfo[] = [
 export const METHOD_FAMILIES: MethodFamily[] = [
   'Describe', 'One sample', 'Two groups', 'Three or more groups',
   'Two factors', 'X versus Y', 'Survival', 'Categorical counts',
+  'Agreement', 'Equivalence', 'Meta-analysis', 'Study design',
   'Assumptions and screening',
 ];
 
@@ -748,11 +779,179 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
           : [],
       };
     }
-    if (method === 'chisq' || method === 'fisher') {
+    if (method === 'resourceequation') {
+      const raw: any = agreement.resourceEquation({
+        groups: analysis.options.designGroups ?? Math.max(2, columns.length),
+        perGroup: analysis.options.designPerGroup ?? 5,
+      });
+      return {
+        ...base,
+        raw,
+        summary: [
+          { label: 'Groups', value: String(raw.groups) },
+          { label: 'Per group', value: String(raw.perGroup) },
+          { label: 'Total', value: String(raw.total) },
+          { label: 'Residual df', value: String(raw.residualDf), note: raw.withinRange ? 'in the usual range' : 'outside 10-20' },
+        ],
+        tables: [{
+          title: 'Group sizes that land in the usual range',
+          columns: ['Groups', 'Per group, fewest', 'Per group, most'],
+          rows: [[raw.groups, raw.minimumPerGroup, raw.maximumPerGroup]],
+        }],
+        warnings: [raw.interpretation, raw.caution],
+      };
+    }
+
+    if (method === 'dagostino') {
+      const rows = columns.map((column) => {
+        const values = columnValues(table, column.id);
+        if (values.length < 20) return [column.name, values.length, '—', '—', 'needs at least twenty values'];
+        const result: any = diagnostics.dagostinoPearson(values);
+        return [column.name, result.n, formatNumber(result.skewness, 3), formatNumber(result.kurtosis, 3),
+          `${formatNumber(result.statistic, 3)}, ${formatP(result.pValue)}`];
+      });
+      return {
+        ...base,
+        raw: { columns: rows },
+        tables: [{ title: "D'Agostino-Pearson per column", columns: ['Column', 'n', 'Skewness', 'Kurtosis', 'K² and P'], rows }],
+        warnings: columns.some((column) => columnValues(table, column.id).length < 20)
+          ? ['Some columns have fewer than twenty values. Use Shapiro-Wilk for those; this test is not defined below twenty.']
+          : [],
+      };
+    }
+
+    if (method === 'blandaltman') {
+      const groups = columns.map((column) => columnValues(table, column.id));
+      if (groups.length !== 2) return { ...base, error: 'Select exactly two columns: the two methods being compared.' };
+      const raw: any = agreement.blandAltman(groups[0], groups[1]);
+      return {
+        ...base,
+        raw,
+        pValue: raw.pValue,
+        summary: [
+          { label: 'Bias', value: formatNumber(raw.bias), note: `${labels[0]} − ${labels[1]}` },
+          { label: '95% limits', value: `${formatNumber(raw.lowerLimit)} to ${formatNumber(raw.upperLimit)}` },
+          { label: 'Bias 95% CI', value: `${formatNumber(raw.biasConfidenceInterval95[0])} to ${formatNumber(raw.biasConfidenceInterval95[1])}` },
+          { label: 'n', value: String(raw.n) },
+        ],
+        warnings: raw.proportionalBiasP < 0.05
+          ? [`The difference changes across the range (slope ${formatNumber(raw.proportionalBiasSlope, 3)}, P = ${formatP(raw.proportionalBiasP)}), so a single pair of limits does not describe the agreement well.`]
+          : [],
+      };
+    }
+
+    if (method === 'tost') {
+      const groups = columns.map((column) => columnValues(table, column.id));
+      if (groups.length !== 2) return { ...base, error: 'Select exactly two columns to compare.' };
+      const bound = analysis.options.equivalenceBound ?? 0;
+      if (!(bound > 0)) {
+        return { ...base, error: 'Set an equivalence bound under Options: the largest difference you would still call equivalent, in the units of your data.' };
+      }
+      const raw: any = agreement.tost(groups[0], groups[1], bound);
+      return {
+        ...base,
+        raw,
+        pValue: raw.pValue,
+        summary: [
+          { label: 'Difference', value: formatNumber(raw.difference), note: `bound ±${bound}` },
+          { label: '90% CI', value: `${formatNumber(raw.confidenceInterval90[0])} to ${formatNumber(raw.confidenceInterval90[1])}` },
+          { label: 'P value', value: formatP(raw.pValue), note: 'the larger of the two one-sided tests' },
+          { label: 'Equivalent', value: raw.equivalent ? 'yes' : 'not shown' },
+        ],
+        warnings: [raw.interpretation],
+      };
+    }
+
+    if (method === 'cochranq') {
+      const groups = columns.map((column) => columnValues(table, column.id));
+      if (groups.length !== 2) return { ...base, error: 'Needs exactly two columns: the effect, and its standard error.' };
+      const raw: any = agreement.cochranQ(groups[0], groups[1]);
+      return {
+        ...base,
+        raw,
+        pValue: raw.pValue,
+        summary: [
+          { label: 'Q', value: formatNumber(raw.statistic), note: `df = ${raw.df}` },
+          { label: 'P value', value: formatP(raw.pValue), note: 'test for heterogeneity' },
+          { label: 'I²', value: `${formatNumber(raw.iSquared, 1)}%` },
+          { label: 'Studies', value: String(raw.studies) },
+        ],
+        tables: [{
+          title: 'Pooled effect',
+          columns: ['Model', 'Effect', '95% CI'],
+          rows: [
+            ['Fixed effect', formatNumber(raw.fixedEffect), `${formatNumber(raw.fixedConfidenceInterval95[0])} to ${formatNumber(raw.fixedConfidenceInterval95[1])}`],
+            ['Random effects', formatNumber(raw.randomEffect), `${formatNumber(raw.randomConfidenceInterval95[0])} to ${formatNumber(raw.randomConfidenceInterval95[1])}`],
+          ],
+        }],
+        warnings: [raw.interpretation],
+      };
+    }
+
+    if (method === 'mantelhaenszel') {
+      const strata = table.rows
+        .map((row) => columns.map((column) => numericCell(row[columnIndex(table, column.id)])))
+        .filter((row) => row.every((value) => value !== null && value >= 0)) as number[][];
+      if (strata.length < 2 || columns.length !== 4) {
+        return { ...base, error: `Needs four columns of counts (a, b, c, d) and at least two rows; this table offers ${columns.length} columns and ${strata.length} usable rows.` };
+      }
+      const raw: any = agreement.mantelHaenszel(strata.map(([a, b, c, d]) => [[a, b], [c, d]]));
+      return {
+        ...base,
+        raw,
+        pValue: raw.pValue,
+        summary: [
+          { label: 'Pooled OR', value: formatNumber(raw.oddsRatio) },
+          { label: '95% CI', value: `${formatNumber(raw.confidenceInterval95[0])} to ${formatNumber(raw.confidenceInterval95[1])}` },
+          { label: 'χ²', value: formatNumber(raw.statistic), note: 'df = 1' },
+          { label: 'P value', value: formatP(raw.pValue) },
+          { label: 'Strata', value: String(raw.strata) },
+        ],
+      };
+    }
+
+    if (method === 'chisq' || method === 'fisher' || method === 'mcnemar' || method === 'kappa') {
       const counts = table.rows
         .map((row) => columns.map((column) => numericCell(row[columnIndex(table, column.id)])))
         .filter((row) => row.every((value) => value !== null && value >= 0)) as number[][];
       if (counts.length < 2) return { ...base, error: 'Needs at least two rows of non-negative counts.' };
+
+      if (method === 'mcnemar') {
+        if (counts.length !== 2 || columns.length !== 2) {
+          return { ...base, error: `McNemar's test needs a 2 × 2 table of paired counts; this is ${counts.length} × ${columns.length}.` };
+        }
+        const raw: any = agreement.mcnemarTest(counts);
+        return {
+          ...base,
+          raw,
+          pValue: raw.pValue,
+          summary: [
+            { label: 'P value', value: formatP(raw.pValue), note: raw.exact ? 'exact binomial' : 'χ², continuity corrected' },
+            { label: 'Discordant pairs', value: String(raw.discordant), note: `${counts[0][1]} one way, ${counts[1][0]} the other` },
+            { label: 'Odds ratio', value: formatNumber(raw.oddsRatio) },
+          ],
+        };
+      }
+
+      if (method === 'kappa') {
+        if (counts.length !== columns.length) {
+          return { ...base, error: `Cohen's kappa needs a square table: the same categories down and across. This is ${counts.length} rows by ${columns.length} columns.` };
+        }
+        const raw: any = agreement.cohensKappa(counts, { weights: analysis.options.kappaWeights ?? 'unweighted' });
+        return {
+          ...base,
+          raw,
+          summary: [
+            { label: 'Kappa', value: formatNumber(raw.kappa), note: raw.interpretation },
+            { label: '95% CI', value: Number.isFinite(raw.standardError)
+              ? `${formatNumber(raw.confidenceInterval95[0])} to ${formatNumber(raw.confidenceInterval95[1])}`
+              : '—' },
+            { label: 'Observed agreement', value: `${formatNumber(raw.observedAgreement * 100, 1)}%` },
+            { label: 'Expected by chance', value: `${formatNumber(raw.expectedAgreement * 100, 1)}%` },
+            { label: 'n', value: String(raw.n) },
+          ],
+        };
+      }
 
       if (method === 'fisher') {
         if (counts.length !== 2 || columns.length !== 2) {
@@ -1182,6 +1381,22 @@ export function methodsSentence(
         ? `${base} and groups were compared with the log-rank (Mantel–Cox) test (${p}; ${engine}).`
         : `${base} (${engine}).`;
     }
+    case 'mcnemar':
+      return `Paired counts were compared with McNemar's test (${(result.raw as any).exact ? 'exact binomial' : 'continuity corrected'}, ${p}; ${engine}).`;
+    case 'kappa':
+      return `Agreement between raters was quantified by Cohen's kappa (κ = ${formatNumber((result.raw as any).kappa)}; ${engine}).`;
+    case 'blandaltman':
+      return `Agreement between the two methods was assessed by the Bland–Altman approach, giving a bias of ${formatNumber((result.raw as any).bias)} with 95% limits of agreement from ${formatNumber((result.raw as any).lowerLimit)} to ${formatNumber((result.raw as any).upperLimit)} (${engine}).`;
+    case 'tost':
+      return `Equivalence within ±${analysis.options.equivalenceBound ?? 0} was tested by two one-sided tests (${p}; ${engine}).`;
+    case 'cochranq':
+      return `Heterogeneity across studies was assessed by Cochran's Q (${p}) with I² = ${formatNumber((result.raw as any).iSquared, 1)}% (${engine}).`;
+    case 'mantelhaenszel':
+      return `Strata were pooled by the Mantel–Haenszel method, giving an odds ratio of ${formatNumber((result.raw as any).oddsRatio)} (${p}; ${engine}).`;
+    case 'dagostino':
+      return `Normality was assessed with the D'Agostino–Pearson omnibus test (${engine}).`;
+    case 'resourceequation':
+      return `Group sizes were checked with the resource equation, giving ${(result.raw as any).residualDf} residual degrees of freedom (${engine}).`;
     case 'normality':
       return `Normality was assessed with the Shapiro–Wilk test (${engine}).`;
     case 'variance':
