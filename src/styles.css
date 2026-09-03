@@ -830,3 +830,90 @@ input:focus-visible, select:focus-visible, button:focus-visible {
   padding: 2px 6px;
   font: 0.72rem/1.4 var(--mono);
 }
+
+/* ------------------------------------------------------------ responsive */
+/* The interface has to work on a 13-inch laptop and on a 33-inch monitor.
+   Below 1200px the side panels give up width; below 900px they stack. */
+
+@media (min-width: 1800px) {
+  .view { max-width: 1400px; }
+  .navigator { width: 268px; }
+}
+
+@media (max-width: 1200px) {
+  .navigator { width: 196px; }
+  .properties { font-size: 0.94em; }
+  .stage { padding: 1rem 1.1rem 3rem; }
+  .view-title { width: 16rem; }
+}
+
+@media (max-width: 900px) {
+  .body { flex-direction: column; }
+  .navigator {
+    width: auto;
+    max-height: 34vh;
+    border-right: none;
+    border-bottom: 1px solid var(--rule);
+  }
+  .figure-layout { grid-template-columns: minmax(0, 1fr); }
+  .split { grid-template-columns: minmax(0, 1fr); }
+  .toolbar { flex-wrap: wrap; row-gap: 0.5rem; }
+  .project-name { width: 10rem; }
+  .grid-wrap { max-height: 45vh; }
+}
+
+@media (max-width: 640px) {
+  .view-head { flex-direction: column; align-items: flex-start; }
+  .tools { width: 100%; overflow-x: auto; }
+  .modal { padding: 1rem; }
+}
+
+/* Very short windows: the grid should not eat the whole viewport. */
+@media (max-height: 700px) {
+  .grid-wrap { max-height: 38vh; }
+  .layout-canvas { max-height: 55vh; }
+}
+
+/* ----------------------------------------------------------------- hints */
+.hint-anchor { position: relative; display: inline-flex; align-items: center; }
+.hint-button {
+  border: 1px solid var(--rule-strong);
+  background: none;
+  color: var(--ink-faint);
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  padding: 0;
+  font: 600 0.62rem/1 var(--mono);
+  display: inline-grid;
+  place-items: center;
+  margin-left: 5px;
+  cursor: help;
+}
+.hint-button:hover, .hint-button:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.hint-popover {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 17rem;
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px var(--shadow);
+  padding: 0.6rem 0.7rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  text-align: left;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.hint-popover.right { left: auto; right: 0; }
+.hint-popover strong { color: var(--ink); }
+.hint-popover svg { display: block; margin: 0.4rem 0 0; background: #fff; border-radius: 3px; }
