@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   type Cell,
+  type Column,
   type Correction,
   type DataTable,
   type Method,
@@ -22,6 +23,7 @@ import {
   methodsSentence,
   significanceStars,
   valueColumns,
+  predictorCandidates,
 } from './model.ts';
 import {
   analysisById, markSaved, resultFor, startAutosave, tableById, useStore,
@@ -804,14 +806,45 @@ function ExportDialog({ name, getNode, beforeExport, onClose }: {
 }
 
 /** A tiny made-up dataset, only ever used to draw the plot-type previews. */
-function demoThumbnailTable(): DataTable {
-  return {
-    id: 'thumb', name: 'preview', shape: 'column',
-    columns: [makeColumn('A'), makeColumn('B'), makeColumn('C')],
-    rows: [
-      [8, 5, 3], [9, 6, 4], [7, 5, 2], [10, 7, 4], [8, 4, 3], [9, 6, 5],
-    ],
-  };
+/**
+ * A small table shaped for whichever plot is being previewed, so the hover
+ * example shows the plot rather than the placeholder it draws on data it
+ * cannot use.
+ */
+function demoThumbnailTable(kind: PlotType): DataTable {
+  const make = (shape: DataTable['shape'], columns: Column[], rows: Cell[][]): DataTable =>
+    ({ id: 'thumb', name: 'preview', shape, columns, rows });
+
+  if (kind === 'survival' || kind === 'hazard') {
+    return make('survival',
+      [makeColumn('Time', 'time'), makeColumn('Event', 'event'), makeColumn(kind === 'hazard' ? 'Age' : 'Group', kind === 'hazard' ? 'group' : 'group')],
+      kind === 'hazard'
+        ? [[5, 1, 60], [8, 1, 55], [12, 0, 70], [3, 1, 65], [15, 1, 50], [20, 0, 45], [7, 1, 72], [9, 0, 58], [11, 1, 63], [6, 1, 68]]
+        : [[5, 1, 'A'], [9, 1, 'A'], [12, 0, 'A'], [6, 1, 'A'], [11, 1, 'B'], [16, 0, 'B'], [19, 1, 'B'], [22, 0, 'B']]);
+  }
+
+  if (kind === 'logisticfit' || kind === 'roc') {
+    return make('column', [makeColumn('Responded'), makeColumn('Dose')],
+      [[0, 1], [0, 2], [0, 3], [1, 4], [0, 5], [1, 6], [1, 7], [1, 8], [1, 9], [0, 3.5]]);
+  }
+
+  if (kind === 'ancova') {
+    return make('xy', [makeColumn('Baseline', 'x'), makeColumn('Vehicle', 'y'), makeColumn('Drug', 'y')],
+      [[1, 10, 20], [2, 12, 23], [3, 15, 25], [4, 16, 28], [5, 19, 30], [6, 21, 33]]);
+  }
+
+  if (['scatter', 'line', 'area', 'step', 'bubble'].includes(kind)) {
+    return make('xy', [makeColumn('X', 'x'), makeColumn('Y', 'y'), makeColumn('Size', 'y')],
+      [[1, 10, 3], [2, 19, 5], [3, 26, 4], [4, 38, 7], [5, 44, 5], [6, 59, 8]]);
+  }
+
+  if (kind === 'forest') {
+    return make('column', [makeColumn('Effect'), makeColumn('SE')],
+      [[0.4, 0.15], [0.2, 0.1], [0.55, 0.2], [0.3, 0.12], [0.1, 0.18]]);
+  }
+
+  return make('column', [makeColumn('A'), makeColumn('B'), makeColumn('C')],
+    [[8, 5, 3], [9, 6, 4], [7, 5, 2], [10, 7, 4], [8, 4, 3], [9, 6, 5]]);
 }
 
 function ThemeToggle({ theme, onChange }: { theme: Theme; onChange: (next: Theme) => void }) {
@@ -1254,7 +1287,7 @@ function AnalysisView({ id }: { id: string }) {
             )}
           </section>
 
-          {(['onesample', 'doseresponse', 'tost', 'kappa', 'resourceequation'].includes(analysis.method) || isGroupComparison) && (
+          {(['onesample', 'doseresponse', 'tost', 'kappa', 'resourceequation', 'logistic', 'poisson', 'ancova', 'cox'].includes(analysis.method) || isGroupComparison) && (
             <section className="panel">
               <h3>Options</h3>
               {analysis.method === 'onesample' && (
@@ -1294,6 +1327,77 @@ function AnalysisView({ id }: { id: string }) {
                       onChange={(event) => setOption({ designPerGroup: Number(event.target.value) || 1 })} />
                   </Field>
                 </div>
+              )}
+              {(analysis.method === 'logistic' || analysis.method === 'poisson') && (
+                <Field label="Outcome column" hintAlign="left" hint={
+                  analysis.method === 'logistic'
+                    ? <>The thing being predicted, coded 0 or 1. Every other selected column is a predictor.</>
+                    : <>The count being predicted, a whole number of events. Every other selected column is a predictor.</>
+                }>
+                  <select value={analysis.options.outcomeColumn ?? candidates[0]?.id ?? ''}
+                    onChange={(event) => setOption({ outcomeColumn: event.target.value })}>
+                    {candidates.map((column) => (
+                      <option key={column.id} value={column.id}>{column.name}</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+              {analysis.method === 'ancova' && (
+                <>
+                  <Field label="Outcome">
+                    <select value={analysis.options.outcomeColumn ?? ''}
+                      onChange={(event) => setOption({ outcomeColumn: event.target.value })}>
+                      <option value="">Choose a column</option>
+                      {candidates.map((column) => (
+                        <option key={column.id} value={column.id}>{column.name}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Covariate to adjust for" hintAlign="left" hint={
+                    <>A continuous measurement taken before treatment — baseline weight, initial
+                    titre, age. Adjusting for it removes variation the treatment did not cause.</>
+                  }>
+                    <select value={analysis.options.covariateColumn ?? ''}
+                      onChange={(event) => setOption({ covariateColumn: event.target.value })}>
+                      <option value="">Choose a column</option>
+                      {candidates.map((column) => (
+                        <option key={column.id} value={column.id}>{column.name}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Column naming the group">
+                    <select value={analysis.options.groupColumn ?? ''}
+                      onChange={(event) => setOption({ groupColumn: event.target.value })}>
+                      <option value="">Choose a column</option>
+                      {table.columns.map((column) => (
+                        <option key={column.id} value={column.id}>{column.name}</option>
+                      ))}
+                    </select>
+                  </Field>
+                </>
+              )}
+              {analysis.method === 'cox' && (
+                <Field label="Predictors" hintAlign="left" hint={
+                  <>Numeric columns thought to change the hazard. Code a two-level factor
+                  as 0 and 1; the hazard ratio is then group 1 against group 0.</>
+                }>
+                  <div className="chips">
+                    {predictorCandidates(table).map((column) => {
+                      const picked = analysis.options.columnIds ?? predictorCandidates(table).map((entry) => entry.id);
+                      const on = picked.includes(column.id);
+                      return (
+                        <button key={column.id} className={`chip ${on ? 'on' : ''}`}
+                          onClick={() => setOption({
+                            columnIds: predictorCandidates(table)
+                              .filter((entry) => (entry.id === column.id ? !on : picked.includes(entry.id)))
+                              .map((entry) => entry.id),
+                          })}>
+                          {column.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Field>
               )}
               {analysis.method === 'doseresponse' && (
                 <label className="check">
@@ -2068,10 +2172,7 @@ function Hint({ children, align = 'left' }: { children: React.ReactNode; align?:
 
 /** A miniature of a plot type, drawn so the picker can show what it means. */
 function PlotThumbnail({ kind }: { kind: PlotType }) {
-  const table = useMemo(() => {
-    const base = demoThumbnailTable();
-    return base;
-  }, []);
+  const table = useMemo(() => demoThumbnailTable(kind), [kind]);
   const figure = useMemo(() => ({
     ...makeFigure('preview', table.id, kind),
     style: defaultStyle({

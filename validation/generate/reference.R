@@ -325,6 +325,54 @@ add("cochranq", "cochranQ", list(effects = cy, standardErrors = cse),
          iSquared = max(0, (cq - cdf) / cq) * 100, fixedEffect = cpooled),
     "four studies, fixed-effect pooling")
 
+# ---- regression models -------------------------------------------------
+lg_x <- 1:20
+lg_y <- c(0,0,0,0,1,0,1,0,1,1,0,1,1,1,1,1,1,1,1,1)
+lg <- glm(lg_y ~ lg_x, family = binomial)
+lg_c <- summary(lg)$coefficients
+add("logistic", "logisticRegression", list(x = list(lg_x), y = lg_y),
+    list(intercept = unname(lg_c[1, 1]), slope = unname(lg_c[2, 1]),
+         interceptSE = unname(lg_c[1, 2]), slopeSE = unname(lg_c[2, 2]),
+         slopeP = unname(lg_c[2, 4]),
+         deviance = deviance(lg), nullDeviance = lg$null.deviance, aic = AIC(lg)),
+    "one continuous predictor")
+
+po_x <- 1:10
+po_y <- c(2, 3, 6, 7, 8, 9, 10, 12, 15, 18)
+po <- glm(po_y ~ po_x, family = poisson)
+po_c <- summary(po)$coefficients
+add("poisson", "poissonRegression", list(x = list(po_x), y = po_y),
+    list(intercept = unname(po_c[1, 1]), slope = unname(po_c[2, 1]),
+         interceptSE = unname(po_c[1, 2]), slopeSE = unname(po_c[2, 2]),
+         slopeP = unname(po_c[2, 4]), deviance = deviance(po)),
+    "counts against time")
+
+an_groups <- list(c(12,14,13,16,15), c(18,20,19,22,21), c(25,27,26,29,28))
+an_cov <- list(c(1,2,1.5,3,2.5), c(1.2,2.2,1.8,3.1,2.6), c(1.1,2.1,1.6,3.2,2.4))
+an_y <- unlist(an_groups); an_c <- unlist(an_cov)
+an_g <- factor(rep(1:3, each = 5))
+an_full <- lm(an_y ~ an_c + an_g)
+an_drop <- drop1(an_full, test = "F")
+add("ancova", "ancova", list(groups = an_groups, covariates = an_cov),
+    list(groupF = an_drop[["F value"]][3], groupPValue = an_drop[["Pr(>F)"]][3],
+         covariateF = an_drop[["F value"]][2], covariatePValue = an_drop[["Pr(>F)"]][2],
+         slope = unname(coef(an_full)[2]), residualDf = an_full$df.residual),
+    "Type II sums of squares, as drop1 gives them")
+
+if (requireNamespace("survival", quietly = TRUE)) {
+  cx_t <- c(5,6,6,2,4,4,3,7,8,9)
+  cx_e <- c(1,0,1,1,1,0,1,1,0,1)
+  cx_x <- c(1,1,0,1,0,0,1,0,1,0)
+  cx <- survival::coxph(survival::Surv(cx_t, cx_e) ~ cx_x, ties = "efron")
+  cx_s <- summary(cx)
+  add("cox", "coxRegression",
+      list(rows = lapply(seq_along(cx_t), function(i) list(time = cx_t[i], event = cx_e[i], x = list(cx_x[i])))),
+      list(coefficient = unname(coef(cx)), standardError = unname(sqrt(diag(vcov(cx)))),
+           hazardRatio = unname(exp(coef(cx))), pValue = unname(cx_s$coefficients[1, 5]),
+           logLikelihood = as.numeric(logLik(cx)), statistic = unname(cx_s$logtest[1])),
+      "Efron tie handling, one binary predictor")
+}
+
 out <- list(
   generatedBy = paste("R", getRversion()),
   note = "Golden values produced by R. Regenerate with validation/generate/reference.R.",

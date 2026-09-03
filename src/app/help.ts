@@ -270,6 +270,67 @@ export const METHOD_HELP: Record<Method, MethodHelp> = {
     reports: "Usually nothing directly, but it justifies choosing Welch over Student's.",
   },
 
+  logistic: {
+    answers: 'Which factors change the odds of a yes/no outcome?',
+    needs: 'One row per subject: a column of 0 and 1 for the outcome, and one column per predictor.',
+    assumes: [
+      'Observations are independent — one row per subject, not repeated measures.',
+      'The log odds change linearly with each continuous predictor.',
+      'Roughly ten of the rarer outcome per predictor. Fewer and the estimates are unstable.',
+    ],
+    doesNot: [
+      'Handle a group that is perfectly separated by a predictor: the coefficient runs to infinity and the fit fails with an explanation.',
+      'Prove causation, however many covariates are added.',
+    ],
+    how: [
+      'One row per subject, one column per variable.',
+      'Pick Logistic regression and say which column is the outcome.',
+      'Read the odds ratios rather than the raw coefficients.',
+    ],
+    reports: 'Each odds ratio with its 95% confidence interval and P, the number of subjects and events, and the area under the ROC curve.',
+  },
+
+  poisson: {
+    answers: 'What changes the rate at which something happens?',
+    needs: 'One row per observation: a column of whole counts, and one column per predictor.',
+    assumes: ['Counts are independent.', 'The variance equals the mean — real counts are often more variable, and you are told when they are.'],
+    doesNot: ['Fit proportions or measurements. The outcome must be a count of events.'],
+    how: ['One row per observation.', 'Pick Poisson regression and say which column holds the counts.'],
+    reports: 'Rate ratios with their confidence intervals, and the dispersion. If the counts are overdispersed, say so and consider a negative binomial model.',
+  },
+
+  ancova: {
+    answers: 'Do the groups differ once a covariate is accounted for?',
+    needs: 'One row per subject: the outcome, a continuous covariate, and a column naming the group.',
+    assumes: [
+      'The covariate relates to the outcome the same way in every group — the regression lines are parallel.',
+      'The covariate was not affected by the treatment. Adjusting for something the treatment changed removes part of the effect you are trying to measure.',
+    ],
+    doesNot: ['Rescue a badly unbalanced experiment. Adjusting for a covariate is not the same as having randomised on it.'],
+    how: [
+      'One row per subject, with the group named in its own column.',
+      'Pick ANCOVA and choose the outcome, the covariate and the group column.',
+      'Read the adjusted means: the group means as if every subject had the same covariate value.',
+    ],
+    reports: 'The group F with both degrees of freedom and P, the adjusted means, and the covariate slope.',
+  },
+
+  cox: {
+    answers: 'Which factors change the hazard of the event over time?',
+    needs: 'A Survival table — time, event, group — plus one or more predictor columns.',
+    assumes: [
+      'Hazards stay proportional: the ratio between two subjects does not change over time.',
+      'Censoring is unrelated to outcome.',
+      'Roughly ten events per predictor.',
+    ],
+    doesNot: ['Check the proportional hazards assumption for you. Look at the survival curves: if they cross, the assumption has failed and a hazard ratio is not a meaningful summary.'],
+    how: [
+      'Set the table shape to Survival and add predictor columns.',
+      'Pick Cox proportional hazards and choose the predictors.',
+    ],
+    reports: 'Hazard ratios with their confidence intervals and P, the number of subjects and events, and a note on whether proportional hazards was checked.',
+  },
+
   mcnemar: {
     answers: 'Did the same subjects change between two conditions?',
     needs: 'A 2 × 2 table of paired counts: both positive, both negative, and the two ways of disagreeing.',
