@@ -154,3 +154,90 @@ export function spearmanExactP(rankX, rankY) {
 
   return Math.min(1, (2 * Math.min(atOrBelow, atOrAbove)) / total);
 }
+
+// Exact conditional tests in the presence of ties.
+//
+// With ties the classic exact distributions no longer apply, because the ranks
+// are no longer 1..n. R 4.5 began computing the conditional permutation
+// distribution over the observed midranks instead of falling back to a normal
+// approximation, and these follow that: enumerate every assignment of the
+// midranks that were actually observed and read the p-value off it.
+//
+// The enumeration is capped, since C(m+n, m) and 2^n both grow quickly. Past
+// the cap the caller falls back to the normal approximation, which is what the
+// approximation is for.
+
+export const MAX_ENUMERATIONS = 300000;
+
+function binomial(n, k) {
+  if (k < 0 || k > n) return 0;
+  let result = 1;
+  for (let i = 0; i < k; i += 1) result = (result * (n - i)) / (i + 1);
+  return Math.round(result);
+}
+
+export const mannWhitneyTiedFeasible = (m, n) => binomial(m + n, m) <= MAX_ENUMERATIONS;
+export const signedRankTiedFeasible = (n) => n <= 20 && 2 ** n <= MAX_ENUMERATIONS;
+
+/**
+ * Two-sided p-value for the rank sum of group A, conditioning on the observed
+ * midranks. Walks every way of choosing m of the m+n ranks.
+ */
+export function mannWhitneyTiedExactP(ranks, m, observedRankSum) {
+  const total = ranks.length;
+  const counts = new Map();
+  const chosen = new Array(m);
+
+  const walk = (start, depth, sum) => {
+    if (depth === m) {
+      const key = sum.toFixed(6);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      return;
+    }
+    // Stop when too few ranks remain to finish the selection.
+    for (let i = start; i <= total - (m - depth); i += 1) {
+      chosen[depth] = ranks[i];
+      walk(i + 1, depth + 1, sum + ranks[i]);
+    }
+  };
+  walk(0, 0, 0);
+
+  let arrangements = 0;
+  let atOrBelow = 0;
+  let atOrAbove = 0;
+  for (const [key, count] of counts) {
+    const sum = Number(key);
+    arrangements += count;
+    if (sum <= observedRankSum + 1e-9) atOrBelow += count;
+    if (sum >= observedRankSum - 1e-9) atOrAbove += count;
+  }
+
+  return Math.min(1, (2 * Math.min(atOrBelow, atOrAbove)) / arrangements);
+}
+
+/**
+ * Two-sided p-value for the positive rank sum, conditioning on the observed
+ * absolute-difference midranks. Every subset gets a sign.
+ */
+export function signedRankTiedExactP(ranks, observedPositiveSum) {
+  const n = ranks.length;
+  const counts = new Map();
+
+  for (let mask = 0; mask < 1 << n; mask += 1) {
+    let sum = 0;
+    for (let i = 0; i < n; i += 1) if (mask & (1 << i)) sum += ranks[i];
+    const key = sum.toFixed(6);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  const arrangements = 2 ** n;
+  let atOrBelow = 0;
+  let atOrAbove = 0;
+  for (const [key, count] of counts) {
+    const sum = Number(key);
+    if (sum <= observedPositiveSum + 1e-9) atOrBelow += count;
+    if (sum >= observedPositiveSum - 1e-9) atOrAbove += count;
+  }
+
+  return Math.min(1, (2 * Math.min(atOrBelow, atOrAbove)) / arrangements);
+}
