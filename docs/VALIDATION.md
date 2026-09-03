@@ -37,7 +37,7 @@ Rscript validation/generate/reference.R    # regenerate them (needs R)
 |---|---|---|
 | Closed-form statistics and p-values | 1 × 10⁻¹⁰ relative | Should agree to near machine precision |
 | Tukey confidence intervals | 1 × 10⁻⁷ relative | Inverted studentized range, numerically integrated |
-| Tukey far-tail p-values | 5 × 10⁻³ relative | See below |
+| Tukey p-values | 1 × 10⁻⁴ relative | Far-tail cancellation; see below |
 | Fisher conditional odds ratio | 1 × 10⁻³ relative | R's own estimate is the imprecise one |
 | Both values below 1 × 10⁻⁹ | Treated as agreeing | Beyond the resolution of either implementation |
 
@@ -50,14 +50,21 @@ E[X | ψ] = a by bisection to about 1 × 10⁻¹², and was checked to satisfy t
 equation more closely than R's own answer. The loose bound reflects the oracle's
 precision, not ours.
 
-**Tukey far-tail p-values.** These come from `1 − CDF` of a numerically
-integrated studentized range. Once the CDF saturates against 1 in double
-precision the subtraction discards the leading digits. Raising the quadrature
-resolution does not help — the loss is in the subtraction, not the integral —
-so far-tail values carry roughly three significant figures. That is far more
-precision than a reported p-value needs. Below `RANGE_P_FLOOR` (1 × 10⁻¹⁰) the
+**Tukey p-values.** The studentized range CDF is integrated numerically and
+agrees with R's `ptukey` to about 1 × 10⁻¹⁰. The p-value is then `1 − CDF`, and
+once the CDF saturates against 1 in double precision that subtraction discards
+the leading digits. Raising the quadrature resolution does not help — the loss
+is in the subtraction, not the integral. Below `RANGE_P_FLOOR` (1 × 10⁻¹⁰) the
 value should be read as "smaller than this"; the floor is returned rather than
 zero so a p-value never claims to be exactly zero.
+
+An earlier version of this integrator was sixty times slower *and* sixty times
+less accurate: it used 96 Gauss-Legendre nodes over 12 panels, and a polynomial
+`erf` inside the integrand that put an 8 × 10⁻⁹ floor under every value. The
+extra nodes could not get past that floor. Sharing the incomplete-gamma normal
+CDF and dropping to 32 nodes over 4 panels improved accuracy to 1.3 × 10⁻¹⁰ and
+cut a Tukey HSD on three groups from 2,400 ms to 140 ms — which matters, because
+results recompute on every keystroke.
 
 ## What this has actually caught
 

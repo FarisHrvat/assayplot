@@ -39,7 +39,7 @@ export function normalQuantile(p) {
  * Abramowitz-Stegun approximation has 1.5e-7 *absolute* error, which destroys
  * relative accuracy exactly where a normality p-value matters.
  */
-function normalCdf(x) {
+export function normalCdf(x) {
   if (!Number.isFinite(x)) return x > 0 ? 1 : 0;
   const tail = 0.5 * regularizedGammaQ(0.5, (x * x) / 2);
   return x >= 0 ? 1 - tail : tail;

@@ -91,13 +91,14 @@ const RUNNERS = {
 // solves E[X | psi] = a by bisection to ~1e-12, and was verified to satisfy that
 // equation more closely than R's own estimate. The loose bound here reflects the
 // oracle's precision, not ours.
-// Tukey confidence intervals come from an inverted studentized range and match
-// R to seven figures. Its far-tail p-values are computed as 1 - CDF, which
-// loses the leading digits once the CDF saturates, so they agree with R to
-// about three significant figures -- see RANGE_P_FLOOR in posthoc.js.
+// Tukey values come from a numerically integrated studentized range, which
+// agrees with R's ptukey to about 1e-10. Its p-values are then computed as
+// 1 - CDF, which loses leading digits once the CDF saturates, so far-tail
+// values are looser than the intervals -- see RANGE_P_FLOOR in posthoc.js.
+// Values below NEGLIGIBLE are past the resolution of either implementation.
 const FIELD_TOLERANCE = {
   oddsRatioConditional: 1e-3,
-  pValues: 5e-3,
+  pValues: 1e-4,
   lower: 1e-7,
   upper: 1e-7,
   differences: 1e-10,
