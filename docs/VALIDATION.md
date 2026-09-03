@@ -22,7 +22,15 @@ inputs and expected outputs to JSON. Those fixtures are committed, so the test
 suite validates the TypeScript engine on any machine with only Node installed.
 
 A separate CI job installs R, regenerates the fixtures, and **fails if the
-committed ones have drifted**. That catches both a regression in AssayPlot and a
+committed ones have drifted**. Drift is judged numerically at 1 × 10⁻¹²
+relative, not byte for byte: R's own math library differs by an ulp between
+macOS on ARM and Linux on x86. A handful of fields R computes by integration or
+iteration are compared more loosely, and `scripts/compare-fixtures.mjs` names
+each one and says why — R's `ptukey`, for instance, returns
+2.1080936996043 × 10⁻¹⁰ on one platform and 2.10809036893522 × 10⁻¹⁰ on the
+other for the same input. Even so the check still fails on a change of one part
+in a million to a Tukey p-value, which is two orders of magnitude finer than
+any real change to a procedure. That catches both a regression in AssayPlot and a
 change in R's own behaviour, and it makes hand-editing a fixture to force a pass
 impossible to hide.
 
