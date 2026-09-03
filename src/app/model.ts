@@ -1095,7 +1095,7 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
 
       const warnings: string[] = [];
       if (raw.ties === true && raw.exact === false) {
-        warnings.push('Ties are present, so the exact test is unavailable. A normal approximation with continuity correction was used, matching R.');
+        warnings.push('Ties are present and the sample is too large to enumerate every arrangement, so a normal approximation with continuity correction was used.');
       }
       if (a.length < 3 || b.length < 3) {
         warnings.push('Fewer than three values in a group. Any p-value here is very weak evidence.');

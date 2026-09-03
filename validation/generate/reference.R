@@ -43,6 +43,14 @@ for (nm in list(list("sep", sep_a, sep_b), list("overlap", overlap_a, overlap_b)
 }
 
 # ---- rank tests -------------------------------------------------------
+# R 4.5 began computing the exact conditional distribution over the observed
+# midranks when there are ties, rather than falling back to a normal
+# approximation. These fixtures record that behaviour, so R 4.5 or later is
+# required to regenerate them.
+if (getRversion() < "4.5.0") {
+  stop("R 4.5 or later is needed: the tied rank-test fixtures depend on the exact conditional distribution introduced in 4.5.")
+}
+
 # no ties -> R uses the exact distribution
 mw <- wilcox.test(sep_a, sep_b)
 add("mannwhitney_exact", "mannWhitney", list(a = sep_a, b = sep_b),
@@ -52,13 +60,13 @@ add("mannwhitney_exact", "mannWhitney", list(a = sep_a, b = sep_b),
 # ties present -> R falls back to the corrected normal approximation
 mwt <- suppressWarnings(wilcox.test(c(1, 2, 2, 3, 5), c(2, 3, 4, 4, 6)))
 add("mannwhitney_ties", "mannWhitney", list(a = c(1, 2, 2, 3, 5), b = c(2, 3, 4, 4, 6)),
-    list(statistic = unname(mwt$statistic), pValue = mwt$p.value, exact = FALSE),
-    "ties: normal approximation with continuity correction")
+    list(statistic = unname(mwt$statistic), pValue = mwt$p.value, exact = TRUE),
+    "ties: exact conditional distribution over the observed midranks")
 
 ws <- suppressWarnings(wilcox.test(tie_a, tie_b, paired = TRUE))
 add("wilcoxon_ties", "wilcoxonSignedRank", list(a = tie_a, b = tie_b),
-    list(statistic = unname(ws$statistic), pValue = ws$p.value, exact = FALSE),
-    "ties in |differences|: normal approximation")
+    list(statistic = unname(ws$statistic), pValue = ws$p.value, exact = TRUE),
+    "ties in |differences|: exact conditional distribution")
 
 wse <- wilcox.test(c(1.2, 3.4, 5.6, 7.8, 9.1, 2.3), c(0.5, 1.1, 2.2, 3.3, 4.4, 0.9), paired = TRUE)
 add("wilcoxon_exact", "wilcoxonSignedRank",

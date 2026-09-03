@@ -28,8 +28,14 @@ impossible to hide.
 
 ```bash
 npm test                                   # validate against committed fixtures
-Rscript validation/generate/reference.R    # regenerate them (needs R)
+Rscript validation/generate/reference.R    # regenerate them (needs R 4.5 or later)
 ```
+
+R 4.5 changed `wilcox.test`: with ties it now computes the exact conditional
+distribution over the observed midranks instead of falling back to a normal
+approximation. AssayPlot follows the newer behaviour, so regenerating the
+fixtures with R 4.4 or earlier will produce different values for the two tied
+cases. The generator refuses to run on an older R rather than writing them.
 
 ## Tolerances
 
@@ -85,6 +91,7 @@ was found by comparing against R:
 | ANOVA on data with no variation divided 0 by 0 | `p = NaN` shown as an empty dash rather than an explanation |
 | Chi-square with an all-zero row or column divided by a zero expected count | Same |
 | Values past ~1e154 overflowed every sum of squares | Statistic and p-value silently became NaN |
+| Rank tests with ties used a normal approximation | Matched R 4.4 but not R 4.5+, which conditions on the observed midranks |
 
 The last two matter: the fit was numerically perfect either way,
 so `R²` and the EC50 both looked right. Only an assertion on the *labels* caught

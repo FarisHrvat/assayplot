@@ -107,14 +107,28 @@ test('switching the correction changes the adjusted p-values', () => {
   assert.ok(none.warnings.length > 0, 'uncorrected comparisons must warn');
 });
 
-test('a rank test on tied data warns that the exact test is unavailable', () => {
+test('tied data still gets an exact test when the sample is small enough', () => {
+  // R 4.5 began conditioning on the observed midranks rather than falling back
+  // to a normal approximation. This matches it.
   const table = tableOf({ A: [1, 2, 2, 3, 5], B: [2, 3, 4, 4, 6] });
   const result = runAnalysis(table, {
     id: 'a', name: 't', tableId: table.id, method: 'mannwhitney', options: {},
   });
   assert.equal(result.raw.ties, true);
+  assert.equal(result.raw.exact, true);
+  assert.match(String(result.raw.pApproach), /conditional/);
+  assert.ok(Math.abs((result.pValue as number) - 2 / 9) < 1e-12, `p was ${result.pValue}`);
+  assert.equal(result.warnings.length, 0, 'nothing to warn about when the test is exact');
+});
+
+test('a tied sample too large to enumerate falls back and says so', () => {
+  const big = (offset: number) => Array.from({ length: 40 }, (_, i) => (i % 7) + offset);
+  const table = tableOf({ A: big(0), B: big(1) });
+  const result = runAnalysis(table, {
+    id: 'a', name: 't', tableId: table.id, method: 'mannwhitney', options: {},
+  });
   assert.equal(result.raw.exact, false);
-  assert.ok(result.warnings.some((w) => /exact test is unavailable/i.test(w)));
+  assert.ok(result.warnings.some((w) => /normal approximation/i.test(w)));
 });
 
 // ------------------------------------------------------------- guardrails

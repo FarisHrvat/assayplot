@@ -1,5 +1,5 @@
 {
-  "generatedBy": "R 4.4.2",
+  "generatedBy": "R 4.6.1",
   "note": "Golden values produced by R. Regenerate with validation/generate/reference.R.",
   "cases": [
     {
@@ -54,7 +54,7 @@
       },
       "expected": {
         "statistic": -1.42917920202099,
-        "df": 7.93177737881508,
+        "df": 7.93177737881509,
         "pValue": 0.191130363393445,
         "confidenceInterval95": [-1.04637412382208, 0.246374123822082]
       },
@@ -111,10 +111,10 @@
       },
       "expected": {
         "statistic": 6.5,
-        "pValue": 0.241844304049463,
-        "exact": false
+        "pValue": 0.222222222222222,
+        "exact": true
       },
-      "note": "ties: normal approximation with continuity correction"
+      "note": "ties: exact conditional distribution over the observed midranks"
     },
     {
       "id": "wilcoxon_ties",
@@ -125,10 +125,10 @@
       },
       "expected": {
         "statistic": 15,
-        "pValue": 0.0579072654172973,
-        "exact": false
+        "pValue": 0.0625,
+        "exact": true
       },
-      "note": "ties in |differences|: normal approximation"
+      "note": "ties in |differences|: exact conditional distribution"
     },
     {
       "id": "wilcoxon_exact",
@@ -188,9 +188,9 @@
       },
       "expected": {
         "estimate": 0.999419474795813,
-        "statistic": 71.8556519615916,
+        "statistic": 71.8556519615985,
         "df": 6,
-        "pValue": 4.888933612558e-10
+        "pValue": 4.88893361255519e-10
       },
       "note": null
     },
@@ -234,9 +234,9 @@
       },
       "expected": {
         "statisticUncorrected": 8.03571428571428,
-        "pValueUncorrected": 0.00458639208025349,
+        "pValueUncorrected": 0.0045863920802535,
         "statisticYates": 6.75223214285714,
-        "pValueYates": 0.00936304763753393,
+        "pValueYates": 0.00936304763753395,
         "df": 1
       },
       "note": null
@@ -336,9 +336,9 @@
       },
       "expected": {
         "differences": [14.1666666666667, 30.1666666666667, 16],
-        "pValues": [5.15444823590006e-06, 2.10809036893522e-10, 1.15726067417832e-06],
-        "lower": [9.27648869158434, 25.2764886915844, 11.1098220249177],
-        "upper": [19.056844641749, 35.056844641749, 20.8901779750824]
+        "pValues": [5.1544482361221e-06, 2.1080936996043e-10, 1.15726067428934e-06],
+        "lower": [9.27648869158433, 25.2764886915843, 11.1098220249177],
+        "upper": [19.056844641749, 35.0568446417491, 20.8901779750824]
       },
       "note": "all pairs, exact family-wise error rate"
     },
@@ -350,7 +350,7 @@
       },
       "expected": {
         "statistic": 0.972045647469928,
-        "pValue": 0.931007135468186
+        "pValue": 0.931007135468182
       },
       "note": null
     },
@@ -362,7 +362,7 @@
       },
       "expected": {
         "statistic": 0.54039420226734,
-        "pValue": 1.08599947588978e-05
+        "pValue": 1.08599947588979e-05
       },
       "note": null
     },
@@ -527,12 +527,12 @@
         ]
       },
       "expected": {
-        "fA": 60.4999999999999,
+        "fA": 60.4999999999998,
         "fB": 181.5,
-        "fInteraction": 6.50000000000002,
-        "pA": 5.00824925395519e-06,
-        "pB": 1.073741824e-09,
-        "pInteraction": 0.0122305904639999,
+        "fInteraction": 6.49999999999999,
+        "pA": 5.00824925395521e-06,
+        "pB": 1.07374182400001e-09,
+        "pInteraction": 0.012230590464,
         "dfA": 1,
         "dfB": 2,
         "dfInteraction": 2,
