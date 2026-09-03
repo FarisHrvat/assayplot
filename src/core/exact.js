@@ -167,7 +167,14 @@ export function spearmanExactP(rankX, rankY) {
 // the cap the caller falls back to the normal approximation, which is what the
 // approximation is for.
 
-export const MAX_ENUMERATIONS = 300000;
+let maxEnumerations = 300000;
+
+/** Set from the app's effort preference; see src/app/settings.ts. */
+export function setMaxEnumerations(limit) {
+  maxEnumerations = Math.max(1000, Math.min(5_000_000, Math.round(limit)));
+}
+
+export const getMaxEnumerations = () => maxEnumerations;
 
 function binomial(n, k) {
   if (k < 0 || k > n) return 0;
@@ -176,8 +183,8 @@ function binomial(n, k) {
   return Math.round(result);
 }
 
-export const mannWhitneyTiedFeasible = (m, n) => binomial(m + n, m) <= MAX_ENUMERATIONS;
-export const signedRankTiedFeasible = (n) => n <= 20 && 2 ** n <= MAX_ENUMERATIONS;
+export const mannWhitneyTiedFeasible = (m, n) => binomial(m + n, m) <= maxEnumerations;
+export const signedRankTiedFeasible = (n) => n <= 24 && 2 ** n <= maxEnumerations;
 
 /**
  * Two-sided p-value for the rank sum of group A, conditioning on the observed

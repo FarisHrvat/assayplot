@@ -25,6 +25,7 @@ import {
   type Problem, type Selection,
 } from './store.ts';
 import { useTheme, type Theme } from './theme.ts';
+import { useSettings } from './settings.ts';
 import { METHOD_HELP, SHAPE_HELP } from './help.ts';
 import { buildReport, reportToHtml, reportToMarkdown } from './report.ts';
 import {
@@ -230,6 +231,7 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
   const [theme, setTheme] = useTheme();
   const [busy, setBusy] = useState(false);
   const [notionOpen, setNotionOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const openRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
@@ -370,10 +372,12 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
         </button>
         <button className="primary" onClick={save}>Save project</button>
         <span className="divider" />
+        <button onClick={() => setSettingsOpen(true)} title="Preferences">⚙</button>
         <ThemeToggle theme={theme} onChange={setTheme} />
       </div>
 
       {notionOpen && <NotionDialog onClose={() => setNotionOpen(false)} />}
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
 
       <input ref={openRef} type="file" accept=".assayplot,.zip,.json" hidden
         onChange={(event) => {
@@ -583,6 +587,112 @@ function NotionDialog({ onClose }: { onClose: () => void }) {
             onClick={send}>
             {sending ? 'Sending…' : 'Send report'}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Drag the corner to size the figure. Pointer events rather than mouse events,
+ * so a trackpad, a pen and a touchscreen all work, and capture so the drag
+ * survives the pointer leaving the handle.
+ */
+function ResizeHandle({ width, height, onResize }: {
+  width: number;
+  height: number;
+  onResize: (width: number, height: number) => void;
+}) {
+  const start = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const onPointerDown = (event: React.PointerEvent) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    start.current = { x: event.clientX, y: event.clientY, width, height };
+    setDragging(true);
+  };
+
+  const onPointerMove = (event: React.PointerEvent) => {
+    if (!start.current) return;
+    const next = start.current;
+    onResize(
+      Math.max(220, Math.round(next.width + (event.clientX - next.x))),
+      Math.max(160, Math.round(next.height + (event.clientY - next.y)))
+    );
+  };
+
+  const stop = (event: React.PointerEvent) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    start.current = null;
+    setDragging(false);
+  };
+
+  return (
+    <div className={`resize-handle ${dragging ? 'dragging' : ''}`}
+      role="slider"
+      aria-label="Resize the figure"
+      aria-valuetext={`${width} by ${height} pixels`}
+      tabIndex={0}
+      title="Drag to resize. Arrow keys adjust in steps of ten."
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={stop}
+      onPointerCancel={stop}
+      onKeyDown={(event) => {
+        const step = event.shiftKey ? 50 : 10;
+        if (event.key === 'ArrowRight') { event.preventDefault(); onResize(width + step, height); }
+        if (event.key === 'ArrowLeft') { event.preventDefault(); onResize(Math.max(220, width - step), height); }
+        if (event.key === 'ArrowDown') { event.preventDefault(); onResize(width, height + step); }
+        if (event.key === 'ArrowUp') { event.preventDefault(); onResize(width, Math.max(160, height - step)); }
+      }}>
+      {dragging && <span className="resize-readout">{width} × {height}</span>}
+    </div>
+  );
+}
+
+function SettingsDialog({ onClose }: { onClose: () => void }) {
+  const [settings, update] = useSettings();
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" role="dialog" aria-label="Preferences" onClick={(event) => event.stopPropagation()}>
+        <h2>Preferences</h2>
+
+        <label className="check">
+          <input type="checkbox" checked={settings.colourBlindSafe}
+            onChange={(event) => update({ colourBlindSafe: event.target.checked })} />
+          Colour-blind safe figures
+        </label>
+        <p className="modal-hint">
+          Gives every series its own marker shape as well as its own colour, and
+          uses a palette that stays distinct under the common forms of
+          colour-vision deficiency. Shape is the part that matters: about one man
+          in twelve cannot reliably separate red from green, and no palette fixes
+          a figure that encodes meaning in hue alone.
+        </p>
+
+        <label className="field">
+          <span>How hard to work the machine</span>
+          <select value={settings.effort}
+            onChange={(event) => update({ effort: event.target.value as typeof settings.effort })}>
+            <option value="light">Light — leave the machine free</option>
+            <option value="balanced">Balanced — the default</option>
+            <option value="thorough">Thorough — exact tests on larger samples</option>
+          </select>
+        </label>
+        <p className="modal-hint">
+          Sets how far an exact test will enumerate before falling back to an
+          approximation, scaled to the number of processors this machine
+          reports. AssayPlot never takes the whole machine: the interface still
+          has to draw, and a frozen window reads as a crash.
+        </p>
+
+        <div className="modal-actions">
+          <span className="modal-spacer" />
+          <button className="primary" onClick={onClose}>Done</button>
         </div>
       </div>
     </div>
@@ -1283,6 +1393,9 @@ function FigureView({ id }: { id: string }) {
   const select = useStore((s) => s.select);
   const svgRef = useRef<HTMLDivElement>(null);
 
+  // Subscribed so a change of preference redraws the figure; the engine itself
+  // reads the current value rather than taking it as a prop.
+  useSettings();
   const [traced, setTraced] = useState<number | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [selected, setSelected] = useState<Selected>(null);
@@ -1316,6 +1429,26 @@ function FigureView({ id }: { id: string }) {
     setTraced((current) => (current === rowIndex ? null : rowIndex));
   }, []);
 
+  const copyFigures = useStore((s) => s.copyFigures);
+  const copyFigure = () => {
+    copyFigures([figure.id]);
+    notify(`“${figure.name}” copied. Open a layout and paste it in.`);
+  };
+
+  // ⌘C on the figure view copies it, unless the user is selecting real text.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key !== 'c') return;
+      if (window.getSelection()?.toString()) return;
+      const target = event.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) return;
+      event.preventDefault();
+      copyFigure();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   const selectedColumn = selected?.kind === 'series'
     ? columns.find((column) => column.id === selected.columnId)
     : null;
@@ -1325,6 +1458,7 @@ function FigureView({ id }: { id: string }) {
       <ViewHead eyebrow={`Figure · from ${table.name}`} title={figure.name}
         onRename={(name) => renameNode('figure', figure.id, name)}>
         <button onClick={() => select({ kind: 'table', id: table.id })}>Open data</button>
+        <button onClick={copyFigure} title="Copy this figure, then paste it into a layout (⌘C)">Copy</button>
         <button onClick={() => setExportOpen(true)}>Export…</button>
       </ViewHead>
 
@@ -1339,11 +1473,16 @@ function FigureView({ id }: { id: string }) {
 
       <div className="figure-layout">
         <div>
-          <div className="canvas" ref={svgRef}>
+          <div className="canvas resizable" ref={svgRef}>
             <Plot table={table} figure={figure} result={result}
               onPickRow={traceRow} highlightRow={traced}
               selected={selected} onSelect={onSelect}
               editing={editing} onEditText={onEditText} onFinishEdit={() => setEditing(null)} />
+            <ResizeHandle
+              width={figure.style.width}
+              height={figure.style.height}
+              onResize={(width, height) => updateStyle(figure.id, { width, height })}
+            />
           </div>
           <p className="trace">
             {traced !== null ? (
@@ -1554,8 +1693,30 @@ function LayoutView({ id }: { id: string }) {
   const renameNode = useStore((s) => s.renameNode);
   const notify = useStore((s) => s.notify);
   const select = useStore((s) => s.select);
+  useSettings();
   const svgRef = useRef<HTMLDivElement>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const clipboard = useStore((s) => s.clipboard);
+  const pasteIntoLayout = useStore((s) => s.pasteIntoLayout);
+
+  const paste = () => {
+    if (!layout) return;
+    const added = pasteIntoLayout(layout.id);
+    if (added) notify(`Added ${added} panel${added === 1 ? '' : 's'}.`);
+    else notify('Nothing to paste. Open a figure and press Copy first.');
+  };
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key !== 'v') return;
+      const target = event.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) return;
+      event.preventDefault();
+      paste();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   if (!layout) return <NothingSelected />;
 
@@ -1581,6 +1742,10 @@ function LayoutView({ id }: { id: string }) {
     <div className="view">
       <ViewHead eyebrow={`Layout · ${panels.length} panel${panels.length === 1 ? '' : 's'}`} title={layout.name}
         onRename={(name) => renameNode('layout', layout.id, name)}>
+        <button onClick={paste} disabled={!clipboard.length}
+          title={clipboard.length ? `Paste ${clipboard.length} copied figure(s) (⌘V)` : 'Copy a figure first'}>
+          Paste
+        </button>
         <button onClick={() => setExportOpen(true)}>Export…</button>
       </ViewHead>
 
