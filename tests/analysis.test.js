@@ -1,0 +1,2 @@
+import test from 'node:test';import assert from 'node:assert/strict';import{createAnalysisRecord,addAnalysisRecord}from'../src/core/analysis.js';
+test('analysis records preserve provenance and are capped',()=>{const first=createAnalysisRecord({method:'Welch t-test',result:{pValue:.01},sourceRows:12});const history=addAnalysisRecord([first],createAnalysisRecord({method:'ANOVA',result:{pValue:.02}}),1);assert.equal(history.length,1);assert.equal(history[0].method,'ANOVA');assert.equal(history[0].result.pValue,.02);assert.ok(first.createdAt)})

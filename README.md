@@ -1,0 +1,150 @@
+# AssayPlot
+
+Statistics and publication figures for the lab. An open alternative to GraphPad
+Prism, for people who would rather not write code.
+
+It runs on your machine. There is no account, no cloud, and no subscription, and
+your data never leaves the computer.
+
+[User guide](docs/GUIDE.md) · [How the statistics are validated](docs/VALIDATION.md) · [Roadmap](docs/ROADMAP.md)
+
+## Status
+
+v0.3.0, a testable alpha. The whole workflow works: get your data in, run a
+test, build a figure, assemble a panel, export it, save the project, open it
+again next week.
+
+## What it does
+
+Four table shapes, so the layout matches how the experiment was recorded:
+Column for comparing groups, Grouped for two factors, XY for anything against a
+concentration or a time, and Survival for time-to-event. It reads `.csv`,
+`.tsv`, `.txt`, `.xlsx`, `.xls` and `.ods`, several files at once, and you can
+paste a block straight out of Excel. The grid navigates with the arrow keys and
+handles 100,000 rows.
+
+Twenty-one analyses:
+
+| | |
+|---|---|
+| Describe | Descriptive statistics |
+| One sample | One-sample *t*-test |
+| Two groups | Welch, Student, paired *t*-test, Mann–Whitney, Wilcoxon signed-rank |
+| Three or more | One-way ANOVA, Kruskal–Wallis, Friedman |
+| Two factors | Two-way ANOVA with replication |
+| X versus Y | Pearson, Spearman, linear regression, dose–response (EC50/IC50) |
+| Survival | Kaplan–Meier with log-rank |
+| Counts | Chi-square with Yates, Fisher's exact |
+| Assumptions | Shapiro–Wilk, Levene, Bartlett, Grubbs |
+
+Post-hoc comparisons are done properly: Tukey HSD with real family-wise
+confidence intervals, Dunn's test after Kruskal–Wallis, each group against a
+control, or Holm and Benjamini–Hochberg on plain pairwise tests.
+
+Twenty-three plot types, bar, dot, box, violin, strip, beeswarm, mean with
+error, lollipop, before/after lines, histogram, density, ECDF, Q–Q, scatter,
+line, area, step, bubble, heatmap, correlation matrix, pie, donut and
+Kaplan–Meier. You edit a figure by clicking it: click the title or an axis
+label and type over it, click a bar or a curve to select that series and change
+its colour. Gridlines, log axes, error-bar definition, significance brackets and
+exact dimensions are all under your control. Panels assemble into multi-panel
+figures with A/B/C labelling. Export is SVG with live text, or PNG at 300 or
+600 dpi.
+
+Three things make the results defensible rather than merely produced. Every
+analysis writes a methods sentence you can paste into a manuscript. Clicking a
+point in a figure takes you to the row it came from. And the report export
+carries a SHA-256 of every data table beside the analysis that used it, so a
+reviewer can confirm the numbers analysed were the numbers supplied.
+
+Projects are a ZIP of readable JSON, unzip one and read your data without
+AssayPlot installed. Work is autosaved and offered back after a crash.
+
+Not built yet: repeated-measures ANOVA, three-way ANOVA, mixed models, Cox
+regression, confidence intervals on dose–response parameters, and subcolumn
+replicates.
+
+## Try it
+
+```bash
+npm install
+npm run dev
+```
+
+Open http://localhost:5173 and load one of the projects in [`examples/`](examples).
+
+For the desktop app:
+
+```bash
+npm run desktop:dev                # develop
+npm run desktop:dmg                # macOS, app and disk image
+npm run desktop:build:installers   # Windows and Linux
+```
+
+## Are the numbers right?
+
+Every procedure is checked against R on every test run.
+`validation/generate/reference.R` computes each one in R at full precision and
+writes the results to JSON. Those fixtures are committed, so the suite runs
+anywhere Node runs; a second CI job regenerates them with R and fails if
+anything has drifted.
+
+```bash
+npm test          # 180 tests, 36 of them checked against R
+npm run typecheck
+npm run licenses
+```
+
+Building that harness found thirteen real defects, none of which a
+self-consistent test suite would have caught. A Mann–Whitney tie correction
+wrong by six per cent. Tail p-values that underflowed to zero. A Friedman test
+handed its matrix transposed. A dose–response model with Top and Bottom the
+wrong way round, which fitted the data perfectly and so looked right in every
+number except the labels. [The full list is in
+docs/VALIDATION.md](docs/VALIDATION.md).
+
+AssayPlot is not validated for clinical or regulatory use. For anything
+consequential, check the result with a statistician.
+
+## Installing an unsigned build
+
+There are no signing certificates yet, so your system will object the first
+time.
+
+- **macOS**, right-click the app, choose Open, then Open again. Or
+  `xattr -dr com.apple.quarantine /Applications/AssayPlot.app`.
+- **Windows**, SmartScreen says "Windows protected your PC". Choose More info,
+  then Run anyway.
+- **Linux**, `chmod +x` the AppImage, or install the `.deb`.
+
+Signing is a release blocker and needs an Apple Developer account and a Windows
+certificate. [docs/RELEASING.md](docs/RELEASING.md) has the steps.
+
+## Layout
+
+```text
+src/core/      statistics, exact distributions, post-hoc, diagnostics (plain JS, no DOM)
+src/app/       document model, store, figure engine, interface        (TypeScript, React)
+src-tauri/     desktop shell                                          (Rust, Tauri 2)
+validation/    R scripts and the fixtures they produce
+tests/         unit, document, import, render, property and R parity suites
+examples/      worked projects, from npm run examples
+scripts/       icon, examples, DMG, licence check
+```
+
+Nothing below the interface touches the DOM, which is why 180 tests run in
+Node in a few seconds.
+
+## Contributing
+
+[CONTRIBUTING.md](CONTRIBUTING.md). Two rules: a statistical change needs a
+fixture proving it against R, and a bug fix needs a test that fails without it.
+
+## Licence
+
+[AGPL-3.0-or-later](LICENSE). Bundled components and the published source of
+every statistical method are listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+GraphPad and Prism are trademarks of GraphPad Software, LLC. AssayPlot is not
+affiliated with them.

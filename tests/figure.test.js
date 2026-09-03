@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import{PLOT_TYPES,createFigure,validateFigure}from'../src/core/figure.js';
+test('figure catalog includes a broad scientific plot vocabulary',()=>{assert.ok(PLOT_TYPES.length>=40);assert.ok(PLOT_TYPES.some(([id])=>id==='survival'));assert.ok(PLOT_TYPES.some(([id])=>id==='heatmap'))});
+test('figure specifications validate and preserve editable settings',()=>{const f=createFigure({type:'violin',title:'Response',showMean:true});assert.equal(validateFigure(f),true);assert.equal(f.title,'Response');assert.equal(f.showMean,true);assert.throws(()=>validateFigure({...f,width:100}),/width/)})

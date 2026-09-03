@@ -1,0 +1,42 @@
+{
+  "name": "assayplot",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "Open-source statistics and publication figures for the lab",
+  "scripts": {
+    "build": "vite build",
+    "desktop:build": "tauri build --bundles app",
+    "desktop:build:installers": "tauri build",
+    "desktop:dev": "tauri dev",
+    "desktop:dmg": "npm run desktop:build && bash scripts/make-dmg.sh",
+    "dev": "vite",
+    "examples": "node scripts/make-examples.mjs",
+    "fixtures": "Rscript validation/generate/reference.R",
+    "icon": "node scripts/make-icon.mjs",
+    "licenses": "node scripts/licenses.mjs",
+    "test": "node --import ./tests/register-tsx.mjs --test tests/*.test.js tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "AGPL-3.0-or-later",
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^5.2.0",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3",
+    "immer": "^11.1.18",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "xlsx": "^0.18.5",
+    "zustand": "^5.0.15"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/assayplot/assayplot"
+  }
+}

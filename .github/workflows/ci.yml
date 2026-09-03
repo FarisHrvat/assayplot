@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Types, tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Dependency licences
+        run: npm run licenses
+      - name: Type check
+        run: npm run typecheck
+      - name: Tests, including the committed R parity fixtures
+        run: npm test
+      - name: Production build
+        run: npm run build
+
+  oracle:
+    name: Regenerate the R fixtures and check for drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+      - name: Install jsonlite
+        run: Rscript -e 'install.packages("jsonlite", repos = "https://cloud.r-project.org")'
+      - run: npm ci
+      - name: Regenerate fixtures from R
+        run: Rscript validation/generate/reference.R
+      - name: Fail if the committed values no longer match R
+        run: |
+          # Compare the cases, not the R version stamp: a newer R on the runner
+          # than on the machine that committed the file is expected and fine.
+          # A changed *value* is not.
+          git show HEAD:validation/fixtures/reference.json | jq -S '.cases' > /tmp/committed.json
+          jq -S '.cases' validation/fixtures/reference.json > /tmp/regenerated.json
+          if ! diff -q /tmp/committed.json /tmp/regenerated.json >/dev/null; then
+            echo "::error::The committed fixtures no longer match what R produces."
+            echo "Either a procedure changed, or the fixtures were edited by hand."
+            diff /tmp/committed.json /tmp/regenerated.json | head -40
+            exit 1
+          fi
+          echo "Committed values still match R $(Rscript -e 'cat(as.character(getRversion()))')."
+      - name: Run the suite against the freshly generated fixtures
+        run: npm test
+
+  desktop:
+    name: Desktop build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22.04 rather than latest: Ubuntu 24.04 cannot resolve
+        # libappindicator3-dev, which Tauri's Linux bundler still wants.
+        os: [macos-latest, ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf \
+            build-essential curl wget file libssl-dev libgtk-3-dev \
+            libayatana-appindicator3-dev
+      - run: npm ci
+      # macOS is packaged separately: Tauri's DMG step drives Finder over
+      # AppleScript, which no CI runner can satisfy.
+      - name: Build installers (macOS)
+        if: matrix.os == 'macos-latest'
+        run: npm run desktop:dmg
+
+      - name: Build installers (Linux, Windows)
+        if: runner.os != 'macOS'
+        run: npm run desktop:build:installers
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assayplot-${{ matrix.os }}
+          path: |
+            src-tauri/target/release/bundle/**/*.dmg
+            src-tauri/target/release/bundle/**/*.AppImage
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*.exe
+          if-no-files-found: warn

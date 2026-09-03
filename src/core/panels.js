@@ -1,0 +1,2 @@
+export function reorderPanels(panels,from,to){if(!Array.isArray(panels)||from<0||to<0||from>=panels.length||to>=panels.length)throw new Error('Panel position is out of range.');const next=panels.map(panel=>({...panel})),[item]=next.splice(from,1);next.splice(to,0,item);return next}
+export function updatePanel(panels,index,changes){if(!Array.isArray(panels)||!panels[index])throw new Error('Panel does not exist.');return panels.map((panel,i)=>i===index?{...panel,...changes}:{...panel})}
