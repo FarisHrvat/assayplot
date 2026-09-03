@@ -696,7 +696,7 @@ function Grid({ style, xTicks, yTicks, xScale, yScale, plotLeft, plotRight, plot
 }
 
 function YAxis(props: any) {
-  const { ticks, yScale, plotLeft, plotTop, plotBottom, font, figure, selected, editing, onSelect, onEditText, onFinishEdit } = props;
+  const { ticks, yScale, plotLeft, plotTop, plotBottom, font, figure, fallbackLabel, selected, editing, onSelect, onEditText, onFinishEdit } = props;
   return (
     <g>
       {ticks.map((tick: number) => (
@@ -710,6 +710,7 @@ function YAxis(props: any) {
       <line x1={plotLeft} x2={plotLeft} y1={plotTop} y2={plotBottom} stroke="#333" strokeWidth={1} />
       <EditableText
         kind="yLabel" value={figure.style.yLabel} placeholder="Y axis label"
+        fallback={fallbackLabel}
         x={0} y={0} anchor="middle"
         transform={`translate(16 ${(plotTop + plotBottom) / 2}) rotate(-90)`}
         fontSize={font} fontWeight={400} fill="#555" boxWidth={220}
@@ -1620,7 +1621,8 @@ function LogisticFitPlot(props: any) {
       <Grid style={style} xTicks={niceTicks(xLow, xHigh)} yTicks={[0, 0.25, 0.5, 0.75, 1]}
         xScale={xScale} yScale={yScale}
         plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
-      <YAxis {...props} ticks={[0, 0.25, 0.5, 0.75, 1]} yScale={yScale} />
+      <YAxis {...props} ticks={[0, 0.25, 0.5, 0.75, 1]} yScale={yScale}
+        fallbackLabel={`Probability of ${picked.outcome.name}`} />
       <XAxisNumeric {...props} ticks={niceTicks(xLow, xHigh)} xScale={xScale} fallbackLabel={picked.predictor.name} />
 
       {half > xLow && half < xHigh && (
@@ -1692,7 +1694,7 @@ function RocPlot(props: any) {
     <>
       <Grid style={style} xTicks={ticks} yTicks={ticks} xScale={xScale} yScale={yScale}
         plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
-      <YAxis {...props} ticks={ticks} yScale={yScale} />
+      <YAxis {...props} ticks={ticks} yScale={yScale} fallbackLabel="Sensitivity" />
       <XAxisNumeric {...props} ticks={ticks} xScale={xScale} fallbackLabel="1 − specificity" />
 
       <line x1={plotLeft} y1={plotBottom} x2={plotRight} y2={plotTop}
@@ -1952,14 +1954,16 @@ function PcaPlot(props: any) {
   if (figure.plotType === 'scree') {
     const shares = fit.explained;
     const step = (plotRight - plotLeft) / shares.length;
-    const yScale = makeScale(0, Math.max(...shares), plotBottom, plotTop);
-    const ticks = niceTicks(0, Math.max(...shares));
+    // Fixed at 0 to 1 rather than to the tallest bar, so the cumulative curve
+    // drawn over the bars can be read off the same axis.
+    const yScale = makeScale(0, 1, plotBottom, plotTop);
+    const ticks = [0, 0.25, 0.5, 0.75, 1];
 
     return (
       <>
         <Grid style={style} xTicks={[]} yTicks={ticks} xScale={makeScale(0, 1, plotLeft, plotRight)} yScale={yScale}
           plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
-        <YAxis {...props} ticks={ticks} yScale={yScale} />
+        <YAxis {...props} ticks={ticks} yScale={yScale} fallbackLabel="Share of the variance" />
 
         {/* The average eigenvalue: components above it carry more than their share. */}
         <line x1={plotLeft} x2={plotRight} y1={yScale.toPixel(1 / fit.variables)} y2={yScale.toPixel(1 / fit.variables)}
@@ -1976,9 +1980,14 @@ function PcaPlot(props: any) {
               textAnchor="middle" fontSize={font - 1} fill="#555">PC{index + 1}</text>
           </g>
         ))}
+        {/* Cumulative variance, on the same scale as the bars. */}
         <polyline fill="none" stroke="#555" strokeWidth={1.4}
           points={fit.cumulative.map((value: number, index: number) =>
-            `${plotLeft + index * step + step / 2},${yScale.toPixel(value * Math.max(...shares))}`).join(' ')} />
+            `${plotLeft + index * step + step / 2},${yScale.toPixel(value)}`).join(' ')} />
+        {fit.cumulative.map((value: number, index: number) => (
+          <circle key={index} cx={plotLeft + index * step + step / 2} cy={yScale.toPixel(value)}
+            r={2.5} fill="#555" />
+        ))}
         <text x={(plotLeft + plotRight) / 2} y={props.xLabelY} textAnchor="middle" fontSize={font} fill="#333">
           {style.xLabel || 'Component'}
         </text>
@@ -2005,7 +2014,8 @@ function PcaPlot(props: any) {
       <Grid style={style} xTicks={niceTicks(xLow, xHigh)} yTicks={niceTicks(yLow, yHigh)}
         xScale={xScale} yScale={yScale}
         plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
-      <YAxis {...props} ticks={niceTicks(yLow, yHigh)} yScale={yScale} />
+      <YAxis {...props} ticks={niceTicks(yLow, yHigh)} yScale={yScale}
+        fallbackLabel={`PC2 (${(fit.explained[1] * 100).toFixed(1)}%)`} />
       <XAxisNumeric {...props} ticks={niceTicks(xLow, xHigh)} xScale={xScale}
         fallbackLabel={`PC1 (${(fit.explained[0] * 100).toFixed(1)}%)`} />
 
@@ -2016,20 +2026,43 @@ function PcaPlot(props: any) {
         <line x1={plotLeft} x2={plotRight} y1={yScale.toPixel(0)} y2={yScale.toPixel(0)} stroke="#DDD" />
       )}
 
-      {/* Loading arrows: which variables pull in which direction. */}
-      {data.variables.map((variable: any, index: number) => {
-        const dx = fit.loadings[index][0] * arrowScale;
-        const dy = fit.loadings[index][1] * arrowScale;
-        return (
-          <g key={variable.id}>
-            <line x1={xScale.toPixel(0)} y1={yScale.toPixel(0)}
-              x2={xScale.toPixel(dx)} y2={yScale.toPixel(dy)}
+      {/* Loading arrows: which variables pull in which direction. Two variables
+          that load almost identically would write their names on top of each
+          other, so the labels are pushed apart afterwards. */}
+      {(() => {
+        const arrows = data.variables.map((variable: any, index: number) => {
+          const dx = fit.loadings[index][0] * arrowScale;
+          const dy = fit.loadings[index][1] * arrowScale;
+          return {
+            variable,
+            tipX: xScale.toPixel(dx),
+            tipY: yScale.toPixel(dy),
+            labelX: xScale.toPixel(dx) + (dx >= 0 ? 4 : -4),
+            labelY: yScale.toPixel(dy) + (dy >= 0 ? -4 : font),
+            anchor: (dx >= 0 ? 'start' : 'end') as 'start' | 'end',
+          };
+        });
+
+        const spacing = font + 1;
+        ['start', 'end'].forEach((side) => {
+          arrows.filter((arrow) => arrow.anchor === side)
+            .sort((a, b) => a.labelY - b.labelY)
+            .forEach((arrow, position, sorted) => {
+              if (position === 0) return;
+              const previous = sorted[position - 1].labelY;
+              if (arrow.labelY - previous < spacing) arrow.labelY = previous + spacing;
+            });
+        });
+
+        return arrows.map((arrow) => (
+          <g key={arrow.variable.id}>
+            <line x1={xScale.toPixel(0)} y1={yScale.toPixel(0)} x2={arrow.tipX} y2={arrow.tipY}
               stroke="#8A9895" strokeWidth={1.2} />
-            <text x={xScale.toPixel(dx * 1.08)} y={yScale.toPixel(dy * 1.08)}
-              textAnchor="middle" fontSize={font - 2} fill="#6B7A77">{variable.name}</text>
+            <text x={arrow.labelX} y={arrow.labelY} textAnchor={arrow.anchor}
+              fontSize={font - 2} fill="#6B7A77">{arrow.variable.name}</text>
           </g>
-        );
-      })}
+        ));
+      })()}
 
       {fit.scores.map((row: number[], index: number) => {
         const which = groupIndex(index);
@@ -2081,7 +2114,13 @@ function ClusterPlot(props: any) {
 
   const n = tree.n;
   const heatmap = figure.plotType === 'clusterheatmap';
-  const treeRight = heatmap ? plotLeft + (plotRight - plotLeft) * 0.28 : plotRight;
+  // Leaf names are written to the right of the tree, so the tree has to stop
+  // short of the edge by roughly the width of the longest one.
+  const longest = data.rowLabels.reduce((worst, label) => Math.max(worst, label.length), 0);
+  const labelWidth = Math.min(140, longest * (font - 2) * 0.58 + 8);
+  const treeRight = heatmap
+    ? plotLeft + (plotRight - plotLeft - labelWidth) * 0.34
+    : plotRight - labelWidth;
   const maxHeight = Math.max(...tree.heights);
   const heightScale = makeScale(0, maxHeight, treeRight, plotLeft + 4);
   const leafStep = (plotBottom - plotTop) / n;
@@ -2136,7 +2175,7 @@ function ClusterPlot(props: any) {
   }
 
   // Heatmap panel, rows in the tree's order so neighbouring rows are similar.
-  const gridLeft = treeRight + 46;
+  const gridLeft = treeRight + labelWidth;
   const cellWidth = (plotRight - gridLeft) / data.variables.length;
   const flat = data.rows.flat();
   const low = Math.min(...flat);
@@ -2223,7 +2262,7 @@ function PlsPlot(props: any) {
       <Grid style={style} xTicks={niceTicks(xLow, xHigh)} yTicks={niceTicks(yLow, yHigh)}
         xScale={xScale} yScale={yScale}
         plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
-      <YAxis {...props} ticks={niceTicks(yLow, yHigh)} yScale={yScale} />
+      <YAxis {...props} ticks={niceTicks(yLow, yHigh)} yScale={yScale} fallbackLabel="Component 2" />
       <XAxisNumeric {...props} ticks={niceTicks(xLow, xHigh)} xScale={xScale} fallbackLabel="Component 1" />
 
       {fit.scores.map((row: number[], index: number) => {
@@ -2312,7 +2351,7 @@ function AnosimPlot(props: any) {
     <>
       <Grid style={style} xTicks={[]} yTicks={ticks} xScale={makeScale(0, 1, plotLeft, plotRight)} yScale={yScale}
         plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
-      <YAxis {...props} ticks={ticks} yScale={yScale} />
+      <YAxis {...props} ticks={ticks} yScale={yScale} fallbackLabel="Rank of the dissimilarity" />
 
       {boxes.map((box, index) => {
         const sorted = box.values.slice().sort((a, b) => a - b);
@@ -2399,7 +2438,8 @@ function MendelianPlot(props: any) {
       <Grid style={style} xTicks={niceTicks(xLow, xHigh)} yTicks={niceTicks(yLow, yHigh)}
         xScale={xScale} yScale={yScale}
         plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
-      <YAxis {...props} ticks={niceTicks(yLow, yHigh)} yScale={yScale} />
+      <YAxis {...props} ticks={niceTicks(yLow, yHigh)} yScale={yScale}
+        fallbackLabel={`Effect on the outcome (${columns[1].name})`} />
       <XAxisNumeric {...props} ticks={niceTicks(xLow, xHigh)} xScale={xScale}
         fallbackLabel={`Effect on the exposure (${columns[0].name})`} />
 
