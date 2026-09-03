@@ -228,7 +228,8 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 
 /* ------------------------------------------------------------------ stage */
 .stage { flex: 1; overflow-y: auto; padding: 1.2rem 1.5rem 4rem; min-width: 0; }
-.view { max-width: 1080px; }
+/* Capped and centred, or text runs 3000px wide on a big monitor. */
+.view { max-width: 1080px; margin-inline: auto; }
 
 .view-head {
   display: flex; align-items: flex-end; justify-content: space-between;
