@@ -41,8 +41,7 @@ Rscript validation/generate/reference.R    # regenerate them (needs R)
 | Fisher conditional odds ratio | 1 × 10⁻³ relative | R's own estimate is the imprecise one |
 | Both values below 1 × 10⁻⁹ | Treated as agreeing | Beyond the resolution of either implementation |
 
-Two of these deserve explanation, because in both cases AssayPlot is *not* the
-less accurate side:
+Two need explaining, because in both AssayPlot is not the less accurate side:
 
 **Fisher's conditional odds ratio.** R's `fisher.test` finds it with `optimize()`
 at its default tolerance, giving about four significant figures. AssayPlot solves
@@ -87,7 +86,7 @@ was found by comparing against R:
 | Chi-square with an all-zero row or column divided by a zero expected count | Same |
 | Values past ~1e154 overflowed every sum of squares | Statistic and p-value silently became NaN |
 
-The last two are worth dwelling on: the fit was numerically perfect either way,
+The last two matter: the fit was numerically perfect either way,
 so `R²` and the EC50 both looked right. Only an assertion on the *labels* caught
 it. A test suite that only checks the numbers a procedure is famous for will miss
 this class of bug.

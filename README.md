@@ -1,30 +1,31 @@
 # AssayPlot
 
-*An open-source alternative to GraphPad Prism, for people who work at a bench.*
+Statistics and publication figures for the lab. An open alternative to GraphPad
+Prism, for people who would rather not write code.
 
-Statistics and publication figures for the lab. Runs offline, on your machine.
-No account, no cloud, no subscription. Your data never leaves the computer.
+It runs on your machine. There is no account, no cloud, and no subscription, and
+your data never leaves the computer.
 
-**[User guide](docs/GUIDE.md)** · **[How the statistics are validated](docs/VALIDATION.md)** · **[Roadmap](docs/ROADMAP.md)**
+[User guide](docs/GUIDE.md) · [How the statistics are validated](docs/VALIDATION.md) · [Roadmap](docs/ROADMAP.md)
 
-## Status: v0.3.0, testable alpha
+## Status
 
-The application works end to end: import your data, run a defensible analysis,
-build a figure, assemble a panel, export it, save the project, reopen it later.
+v0.3.0, a testable alpha. The whole workflow works: get your data in, run a
+test, build a figure, assemble a panel, export it, save the project, open it
+again next week.
 
-### What works
+## What it does
 
-**Data**
+Four table shapes, so the layout matches how the experiment was recorded:
+Column for comparing groups, Grouped for two factors, XY for anything against a
+concentration or a time, and Survival for time-to-event. It reads `.csv`,
+`.tsv`, `.txt`, `.xlsx`, `.xls` and `.ods`, several files at once, and you can
+paste a block straight out of Excel. The grid navigates with the arrow keys and
+handles 100,000 rows.
 
-- Four table shapes — Column, Grouped (two factors), XY, and Survival — so the
-  layout matches how the experiment was actually recorded.
-- Imports `.csv`, `.tsv`, `.txt`, `.xlsx`, `.xls`, `.ods`, several files at once.
-- Paste a block straight from Excel. Spreadsheet keyboard navigation. Full
-  undo/redo. Handles 100,000 rows without slowing down.
+Twenty-one analyses:
 
-**19 analyses**, grouped by the question being asked
-
-| Family | Methods |
+| | |
 |---|---|
 | Describe | Descriptive statistics |
 | One sample | One-sample *t*-test |
@@ -33,40 +34,35 @@ build a figure, assemble a panel, export it, save the project, reopen it later.
 | Two factors | Two-way ANOVA with replication |
 | X versus Y | Pearson, Spearman, linear regression, dose–response (EC50/IC50) |
 | Survival | Kaplan–Meier with log-rank |
-| Counts | Chi-square (with Yates), Fisher's exact |
-| Assumptions | Shapiro–Wilk, Levene, Bartlett, Grubbs' outliers |
+| Counts | Chi-square with Yates, Fisher's exact |
+| Assumptions | Shapiro–Wilk, Levene, Bartlett, Grubbs |
 
-Post-hoc done properly: **Tukey HSD** with real family-wise confidence
-intervals, **Dunn's test** after Kruskal–Wallis, each-group-versus-control, or
-Holm and Benjamini–Hochberg on plain pairwise tests.
+Post-hoc comparisons are done properly: Tukey HSD with real family-wise
+confidence intervals, Dunn's test after Kruskal–Wallis, each group against a
+control, or Holm and Benjamini–Hochberg on plain pairwise tests.
 
-**Figures**
+Twenty-three plot types — bar, dot, box, violin, strip, beeswarm, mean with
+error, lollipop, before/after lines, histogram, density, ECDF, Q–Q, scatter,
+line, area, step, bubble, heatmap, correlation matrix, pie, donut and
+Kaplan–Meier. You edit a figure by clicking it: click the title or an axis
+label and type over it, click a bar or a curve to select that series and change
+its colour. Gridlines, log axes, error-bar definition, significance brackets and
+exact dimensions are all under your control. Panels assemble into multi-panel
+figures with A/B/C labelling. Export is SVG with live text, or PNG at 300 or
+600 dpi.
 
-- 23 plot types: bar, dot, box, violin, strip, beeswarm, mean±error, lollipop,
-  before/after lines, histogram, density, ECDF, Q–Q, scatter, line, area, step,
-  bubble, heatmap, correlation matrix, pie, donut, Kaplan–Meier.
-- **Edit the figure by clicking it.** Click the title or an axis label to type a
-  new one in place; click a bar, point or curve to select that series and set
-  its colour.
-- Gridlines, log axes, error-bar definition, significance brackets that stack
-  without colliding, and exact figure dimensions.
-- Multi-panel layouts with A/B/C labelling.
-- Export SVG (text stays editable) or PNG at 300/600 dpi.
+Three things make the results defensible rather than merely produced. Every
+analysis writes a methods sentence you can paste into a manuscript. Clicking a
+point in a figure takes you to the row it came from. And the report export
+carries a SHA-256 of every data table beside the analysis that used it, so a
+reviewer can confirm the numbers analysed were the numbers supplied.
 
-**Reproducibility**
+Projects are a ZIP of readable JSON — unzip one and read your data without
+AssayPlot installed. Work is autosaved and offered back after a crash.
 
-- A methods sentence for every analysis, ready to paste into a manuscript.
-- Click any point in a figure to trace it back to its source row.
-- Projects are a ZIP of readable JSON — unzip one and read your data without
-  AssayPlot installed.
-- Autosave with crash recovery; an error boundary that offers your project back
-  rather than white-screening.
-
-### Not built yet
-
-Repeated-measures ANOVA, three-way ANOVA, mixed-effects models, Cox regression,
-confidence intervals on dose–response parameters, and subcolumn replicates.
-See [docs/ROADMAP.md](docs/ROADMAP.md).
+Not built yet: repeated-measures ANOVA, three-way ANOVA, mixed models, Cox
+regression, confidence intervals on dose–response parameters, and subcolumn
+replicates.
 
 ## Try it
 
@@ -75,86 +71,80 @@ npm install
 npm run dev
 ```
 
-Then open http://localhost:5173 and open one of the files in
-[`examples/`](examples) from the toolbar.
+Open http://localhost:5173 and load one of the projects in [`examples/`](examples).
 
-### As a desktop app
+For the desktop app:
 
 ```bash
 npm run desktop:dev                # develop
-npm run desktop:build              # a double-clickable app (~8 MB)
-npm run desktop:build:installers   # platform installers
+npm run desktop:dmg                # macOS, app and disk image
+npm run desktop:build:installers   # Windows and Linux
 ```
-
-The macOS app lands in `src-tauri/target/release/bundle/macos/AssayPlot.app`.
-Builds are **not code-signed**, so macOS and Windows will warn on first launch —
-see [Installing an unsigned build](#installing-an-unsigned-build).
 
 ## Are the numbers right?
 
-Every statistical procedure is checked against **R** on every test run.
-`validation/generate/reference.R` produces golden fixtures at full double
-precision; those fixtures are committed, so CI validates the engine without R
-installed. A second CI job regenerates them with R and fails if they have
-drifted.
+Every procedure is checked against R on every test run.
+`validation/generate/reference.R` computes each one in R at full precision and
+writes the results to JSON. Those fixtures are committed, so the suite runs
+anywhere Node runs; a second CI job regenerates them with R and fails if
+anything has drifted.
 
 ```bash
-npm test        # 164 tests, 36 of them R parity cases
+npm test          # 180 tests, 36 of them checked against R
 npm run typecheck
 npm run licenses
 ```
 
-Building this harness found **ten real defects** that no amount of
-self-consistent testing would have caught — including a Mann–Whitney tie
-correction wrong by 6%, tail p-values that underflowed to zero, a Friedman test
-handed its matrix transposed, and a dose–response model with Top and Bottom
-inverted. [The full list is in docs/VALIDATION.md](docs/VALIDATION.md).
+Building that harness found thirteen real defects, none of which a
+self-consistent test suite would have caught. A Mann–Whitney tie correction
+wrong by six per cent. Tail p-values that underflowed to zero. A Friedman test
+handed its matrix transposed. A dose–response model with Top and Bottom the
+wrong way round, which fitted the data perfectly and so looked right in every
+number except the labels. [The full list is in
+docs/VALIDATION.md](docs/VALIDATION.md).
 
-AssayPlot is **not validated for clinical or regulatory use**. For consequential
-decisions, confirm results with a statistician.
+AssayPlot is not validated for clinical or regulatory use. For anything
+consequential, check the result with a statistician.
 
 ## Installing an unsigned build
 
-Until signing certificates are in place:
+There are no signing certificates yet, so your system will object the first
+time.
 
-- **macOS** — right-click the app and choose *Open*, then *Open* again. Or
+- **macOS** — right-click the app, choose Open, then Open again. Or
   `xattr -dr com.apple.quarantine /Applications/AssayPlot.app`.
-- **Windows** — SmartScreen shows "Windows protected your PC". Choose *More
-  info* → *Run anyway*.
+- **Windows** — SmartScreen says "Windows protected your PC". Choose More info,
+  then Run anyway.
 - **Linux** — `chmod +x` the AppImage, or install the `.deb`.
 
-Signing is tracked as a release blocker; see [docs/ROADMAP.md](docs/ROADMAP.md).
+Signing is a release blocker and needs an Apple Developer account and a Windows
+certificate. [docs/RELEASING.md](docs/RELEASING.md) has the steps.
 
-## How it is put together
+## Layout
 
 ```text
-src/core/      statistics, exact distributions, post-hoc, diagnostics  (plain JS, no DOM)
-src/app/       document model, store, figure engine, interface         (TypeScript + React)
-src-tauri/     desktop shell                                           (Rust, Tauri 2)
-validation/    R scripts and the golden fixtures they produce
-tests/         unit, document-model, import, and R parity suites
-examples/      worked projects, generated by npm run examples
-scripts/       icon and example generators, licence check
+src/core/      statistics, exact distributions, post-hoc, diagnostics (plain JS, no DOM)
+src/app/       document model, store, figure engine, interface        (TypeScript, React)
+src-tauri/     desktop shell                                          (Rust, Tauri 2)
+validation/    R scripts and the fixtures they produce
+tests/         unit, document, import, render, property and R parity suites
+examples/      worked projects, from npm run examples
+scripts/       icon, examples, DMG, licence check
 ```
 
-Everything below the interface is free of DOM references, so the engine can be
-tested in Node and reused by a future command-line or notebook interface.
+Nothing below the interface touches the DOM, which is why 180 tests run in
+Node in a few seconds.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). In short: a statistical change needs a
+[CONTRIBUTING.md](CONTRIBUTING.md). Two rules: a statistical change needs a
 fixture proving it against R, and a bug fix needs a test that fails without it.
 
 ## Licence
 
-[AGPL-3.0-or-later](LICENSE). Third-party components and the published sources
-of every statistical method are listed in
+[AGPL-3.0-or-later](LICENSE). Bundled components and the published source of
+every statistical method are listed in
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 GraphPad and Prism are trademarks of GraphPad Software, LLC. AssayPlot is not
-affiliated with or derived from GraphPad Software.
-
-### The name
-
-Checked before adoption: `assayplot` is free on npm, GitHub, PyPI and crates.io,
-`assayplot.org` is unregistered, and no software product uses it.
+affiliated with them.
