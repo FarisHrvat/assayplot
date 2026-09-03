@@ -181,7 +181,7 @@ export interface Project {
 }
 
 export const SCHEMA_VERSION = 5;
-export const APP_VERSION = '0.3.0';
+export const APP_VERSION = '0.3.1';
 
 let counter = 0;
 export function newId(prefix: string): string {
