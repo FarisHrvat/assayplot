@@ -1210,7 +1210,7 @@ function AnalysisView({ id }: { id: string }) {
 
   const isGroupComparison = ['anova', 'kruskal', 'friedman'].includes(analysis.method);
   const showColumnPicker = candidates.length > 1 &&
-    !['normality', 'outlier', 'descriptive'].includes(analysis.method);
+    !['normality', 'outlier', 'descriptive', 'tdt', 'simon'].includes(analysis.method);
 
   const corrections: { id: Correction; label: string; only?: Method[] }[] = ([
     { id: 'tukey', label: 'Tukey HSD (all pairs, exact family-wise)', only: ['anova'] },
@@ -1287,7 +1287,8 @@ function AnalysisView({ id }: { id: string }) {
             )}
           </section>
 
-          {(['onesample', 'doseresponse', 'tost', 'kappa', 'resourceequation', 'logistic', 'poisson', 'ancova', 'cox'].includes(analysis.method) || isGroupComparison) && (
+          {(['onesample', 'doseresponse', 'tost', 'kappa', 'resourceequation', 'logistic', 'poisson', 'ancova', 'cox', 'gee', 'pca',
+            'cluster', 'anosim', 'plsda', 'tdt', 'simon', 'rout'].includes(analysis.method) || isGroupComparison) && (
             <section className="panel">
               <h3>Options</h3>
               {analysis.method === 'onesample' && (
@@ -1327,6 +1328,163 @@ function AnalysisView({ id }: { id: string }) {
                       onChange={(event) => setOption({ designPerGroup: Number(event.target.value) || 1 })} />
                   </Field>
                 </div>
+              )}
+              {analysis.method === 'gee' && (
+                <>
+                  <Field label="Outcome">
+                    <select value={analysis.options.outcomeColumn ?? ''}
+                      onChange={(event) => setOption({ outcomeColumn: event.target.value })}>
+                      <option value="">Choose a column</option>
+                      {candidates.map((column) => (
+                        <option key={column.id} value={column.id}>{column.name}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Column naming the subject or cluster" hintAlign="left" hint={
+                    <>Measurements sharing a label are treated as correlated. Every row of one
+                    animal, one patient or one plate carries the same label.</>
+                  }>
+                    <select value={analysis.options.groupColumn ?? ''}
+                      onChange={(event) => setOption({ groupColumn: event.target.value })}>
+                      <option value="">Choose a column</option>
+                      {table.columns.map((column) => (
+                        <option key={column.id} value={column.id}>{column.name}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Outcome type">
+                    <select value={analysis.options.geeFamily ?? 'gaussian'}
+                      onChange={(event) => setOption({ geeFamily: event.target.value as any })}>
+                      <option value="gaussian">Continuous measurement</option>
+                      <option value="binomial">Yes or no, coded 0 and 1</option>
+                      <option value="poisson">A count of events</option>
+                    </select>
+                  </Field>
+                </>
+              )}
+              {analysis.method === 'pca' && (
+                <label className="check">
+                  <input type="checkbox" checked={analysis.options.scaleVariables ?? true}
+                    onChange={(event) => setOption({ scaleVariables: event.target.checked })} />
+                  Scale each variable to unit variance
+                </label>
+              )}
+              {(analysis.method === 'cluster' || analysis.method === 'anosim') && (
+                <Field label="Distance" hintAlign="left" hint={
+                  <>Euclidean treats a large variable as more important. Correlation
+                  distance ignores magnitude and compares shape, which is what you
+                  usually want for expression data.</>
+                }>
+                  <select value={analysis.options.distanceMetric ?? 'euclidean'}
+                    onChange={(event) => setOption({ distanceMetric: event.target.value })}>
+                    <option value="euclidean">Euclidean — straight-line distance</option>
+                    <option value="manhattan">Manhattan — sum of differences</option>
+                    <option value="maximum">Maximum — the largest single difference</option>
+                    <option value="correlation">Correlation — shape, not magnitude</option>
+                  </select>
+                </Field>
+              )}
+              {analysis.method === 'cluster' && (
+                <>
+                  <Field label="Linkage">
+                    <select value={analysis.options.linkage ?? 'average'}
+                      onChange={(event) => setOption({ linkage: event.target.value })}>
+                      <option value="average">Average — the usual default</option>
+                      <option value="complete">Complete — compact, equally sized clusters</option>
+                      <option value="single">Single — follows chains, sensitive to noise</option>
+                      <option value="ward">Ward — minimises within-cluster variance</option>
+                    </select>
+                  </Field>
+                  <div className="field-row">
+                    <Field label="Cut into">
+                      <input type="number" min={2} value={analysis.options.clusterCount ?? 2}
+                        onChange={(event) => setOption({ clusterCount: Number(event.target.value) || 2 })} />
+                    </Field>
+                    <Field label="Bootstrap replicates">
+                      <input type="number" min={50} step={50} value={analysis.options.resamples ?? 500}
+                        onChange={(event) => setOption({ resamples: Number(event.target.value) || 500 })} />
+                    </Field>
+                  </div>
+                </>
+              )}
+              {(analysis.method === 'anosim' || analysis.method === 'plsda') && (
+                <Field label={analysis.method === 'anosim' ? 'Column naming the group' : 'Column naming the class'}>
+                  <select value={analysis.options.groupColumn ?? ''}
+                    onChange={(event) => setOption({ groupColumn: event.target.value })}>
+                    <option value="">Choose a column</option>
+                    {table.columns.map((column) => (
+                      <option key={column.id} value={column.id}>{column.name}</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+              {analysis.method === 'anosim' && (
+                <Field label="Permutations">
+                  <input type="number" min={99} step={100} value={analysis.options.resamples ?? 999}
+                    onChange={(event) => setOption({ resamples: Number(event.target.value) || 999 })} />
+                </Field>
+              )}
+              {analysis.method === 'tdt' && (
+                <div className="field-row">
+                  <Field label="Transmitted" hintAlign="left" hint={
+                    <>Heterozygous parents who passed the allele to the affected child.
+                    Homozygous parents carry no information and are not counted.</>
+                  }>
+                    <input type="number" min={0} value={analysis.options.transmittedCount ?? ''}
+                      placeholder="e.g. 34"
+                      onChange={(event) => setOption({ transmittedCount: Number(event.target.value) })} />
+                  </Field>
+                  <Field label="Not transmitted">
+                    <input type="number" min={0} value={analysis.options.untransmittedCount ?? ''}
+                      placeholder="e.g. 16"
+                      onChange={(event) => setOption({ untransmittedCount: Number(event.target.value) })} />
+                  </Field>
+                </div>
+              )}
+              {analysis.method === 'simon' && (
+                <>
+                  <div className="field-row">
+                    <Field label="Response rate not worth pursuing" hintAlign="left" hint={
+                      <>The rate you would expect from standard care, or from nothing.
+                      Decide both rates before the trial, on clinical grounds.</>
+                    }>
+                      <input type="number" step="0.01" min={0.01} max={0.98}
+                        value={analysis.options.responseNull ?? 0.05}
+                        onChange={(event) => setOption({ responseNull: Number(event.target.value) })} />
+                    </Field>
+                    <Field label="Response rate worth pursuing">
+                      <input type="number" step="0.01" min={0.02} max={0.99}
+                        value={analysis.options.responseTarget ?? 0.25}
+                        onChange={(event) => setOption({ responseTarget: Number(event.target.value) })} />
+                    </Field>
+                  </div>
+                  <div className="field-row">
+                    <Field label="Alpha">
+                      <input type="number" step="0.01" min={0.01} max={0.2}
+                        value={analysis.options.alphaLevel ?? 0.05}
+                        onChange={(event) => setOption({ alphaLevel: Number(event.target.value) })} />
+                    </Field>
+                    <Field label="Power">
+                      <input type="number" step="0.05" min={0.5} max={0.99}
+                        value={analysis.options.powerTarget ?? 0.8}
+                        onChange={(event) => setOption({ powerTarget: Number(event.target.value) })} />
+                    </Field>
+                  </div>
+                </>
+              )}
+              {analysis.method === 'rout' && (
+                <Field label="Q, the false discovery rate" hintAlign="left" hint={
+                  <>Not a significance level. At 1 per cent, about one in a hundred
+                  points flagged is expected to be a false alarm.</>
+                }>
+                  <select value={String(analysis.options.falseDiscoveryRate ?? 0.01)}
+                    onChange={(event) => setOption({ falseDiscoveryRate: Number(event.target.value) })}>
+                    <option value="0.001">0.1% — flags only the obvious</option>
+                    <option value="0.01">1% — the usual choice</option>
+                    <option value="0.05">5% — flags more, and more of them wrongly</option>
+                    <option value="0.1">10%</option>
+                  </select>
+                </Field>
               )}
               {(analysis.method === 'logistic' || analysis.method === 'poisson') && (
                 <Field label="Outcome column" hintAlign="left" hint={

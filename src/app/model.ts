@@ -15,6 +15,10 @@ import * as diagnostics from '../core/diagnostics.js';
 import * as agreement from '../core/agreement.js';
 // @ts-ignore
 import * as regression from '../core/regression.js';
+// @ts-ignore
+import * as multivariate from '../core/multivariate.js';
+// @ts-ignore
+import * as designs from '../core/designs.js';
 
 export type Cell = number | string | null;
 
@@ -94,6 +98,16 @@ export type Method =
   | 'poisson'
   | 'ancova'
   | 'cox'
+  | 'mixed'
+  | 'gee'
+  | 'pca'
+  | 'cluster'
+  | 'anosim'
+  | 'plsda'
+  | 'tdt'
+  | 'mendelian'
+  | 'simon'
+  | 'rout'
   | 'normality'
   | 'dagostino'
   | 'variance'
@@ -123,8 +137,54 @@ export interface AnalysisOptions {
   outcomeColumn?: string;
   /** Continuous column adjusted for in ANCOVA. */
   covariateColumn?: string;
-  /** Column naming the group in ANCOVA. */
+  /** Column naming the group in ANCOVA, ANOSIM, PLS-DA, and the cluster in GEE. */
   groupColumn?: string;
+  /** Divide each variable by its standard deviation before a PCA. */
+  scaleVariables?: boolean;
+  /** Distance and linkage for hierarchical clustering. */
+  distanceMetric?: string;
+  linkage?: string;
+  /** How many clusters to cut the tree into when reporting membership. */
+  clusterCount?: number;
+  /** Resampling effort for clustering support and permutation tests. */
+  resamples?: number;
+  /** Outcome family for generalised estimating equations. */
+  geeFamily?: 'gaussian' | 'binomial' | 'poisson';
+  /** Transmission counts for the TDT, which is computed from counts not rows. */
+  transmittedCount?: number;
+  untransmittedCount?: number;
+  /** Response rates and error rates for Simon's two-stage design. */
+  responseNull?: number;
+  responseTarget?: number;
+  alphaLevel?: number;
+  powerTarget?: number;
+  /** False discovery rate for ROUT, as a proportion. */
+  falseDiscoveryRate?: number;
+}
+
+/**
+ * A deterministic generator, seeded from the data itself. Permutation tests
+ * must give the same answer twice: a figure that changes when you reopen the
+ * project is not a result anyone can publish.
+ */
+export function seededRandom(seed: number) {
+  let state = (seed >>> 0) || 0x2f6e2b1;
+  return () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    state >>>= 0;
+    return state / 0x100000000;
+  };
+}
+
+function seedFrom(values: number[]): number {
+  let hash = 2166136261;
+  for (const value of values) {
+    const bits = Math.round(value * 1e6) | 0;
+    hash = Math.imul(hash ^ bits, 16777619);
+  }
+  return hash >>> 0;
 }
 
 export interface Analysis {
@@ -357,6 +417,7 @@ export type MethodFamily =
   | 'Describe' | 'One sample' | 'Two groups' | 'Three or more groups'
   | 'X versus Y' | 'Two factors' | 'Survival' | 'Categorical counts'
   | 'Agreement' | 'Equivalence' | 'Meta-analysis' | 'Study design' | 'Modelling'
+  | 'Multivariate' | 'Genetics'
   | 'Assumptions and screening';
 
 export interface MethodInfo {
@@ -406,6 +467,21 @@ export const METHODS: MethodInfo[] = [
   { id: 'logistic', label: 'Logistic regression', family: 'Modelling', assumes: 'One row per subject. The outcome column is 0 or 1; every other selected column is a predictor.', minGroups: 2, maxGroups: Infinity, shapes: ['column'] },
   { id: 'poisson', label: 'Poisson regression (counts)', family: 'Modelling', assumes: 'One row per observation. The outcome column holds whole counts; every other selected column is a predictor.', minGroups: 2, maxGroups: Infinity, shapes: ['column'] },
   { id: 'ancova', label: 'ANCOVA (adjust for a covariate)', family: 'Modelling', assumes: 'On an XY table the X column is the covariate and each Y column is a group. On a Column table, choose the outcome, the covariate and the column naming the group.', minGroups: 2, maxGroups: Infinity, shapes: ['xy', 'column'] },
+  { id: 'mixed', label: 'Mixed-effects model (repeated measures)', family: 'Modelling', assumes: 'One row per subject, one column per condition. Blanks are allowed: a subject with a missing measurement still contributes the ones they gave.', minGroups: 2, maxGroups: Infinity, shapes: ['column'] },
+  { id: 'gee', label: 'Generalised estimating equations', family: 'Modelling', assumes: 'One row per measurement, with a column naming the subject it belongs to. Answers what happens on average across the population rather than within one subject.', minGroups: 2, maxGroups: Infinity, shapes: ['column'] },
+
+  { id: 'pca', label: 'Principal component analysis', family: 'Multivariate', assumes: 'One row per sample, one column per measured variable. Continuous measurements only.', minGroups: 2, maxGroups: Infinity, shapes: ['column'] },
+  { id: 'cluster', label: 'Hierarchical clustering with bootstrap', family: 'Multivariate', assumes: 'One row per sample, one column per variable. Support below about 70 per cent means the branch is not evidence of anything.', minGroups: 2, maxGroups: Infinity, shapes: ['column'] },
+  { id: 'anosim', label: 'ANOSIM (similarity between groups)', family: 'Multivariate', assumes: 'One row per sample, one column naming its group, the rest measured variables. The p-value comes from permuting the labels, so nothing is assumed about their distribution.', minGroups: 2, maxGroups: Infinity, shapes: ['column'] },
+  { id: 'plsda', label: 'PLS-DA (supervised separation)', family: 'Multivariate', assumes: 'One row per sample, one column naming its class, the rest measured variables. Accuracy is reported leave-one-out, because a PLS-DA model always fits its own training data.', minGroups: 2, maxGroups: Infinity, shapes: ['column'] },
+
+  { id: 'tdt', label: 'Transmission disequilibrium test', family: 'Genetics', assumes: 'Counts of heterozygous parents who did and did not transmit the allele to an affected child. Each parent is their own control, so population structure cannot fake a result.', minGroups: 1, maxGroups: Infinity, shapes: ['column'] },
+  { id: 'mendelian', label: 'Mendelian randomisation', family: 'Genetics', assumes: 'One row per genetic instrument, with its effect on the exposure, its effect on the outcome, and the standard error of that outcome effect.', minGroups: 3, maxGroups: Infinity, shapes: ['column'] },
+
+  { id: 'simon', label: "Simon's two-stage design", family: 'Study design', assumes: 'A single-arm trial with a binary response. Needs no data: choose the response rate not worth pursuing and the one that is.', minGroups: 1, maxGroups: Infinity, shapes: ['column', 'grouped', 'xy', 'survival'] },
+
+  { id: 'rout', label: 'ROUT outlier identification', family: 'Assumptions and screening', assumes: 'Values roughly normal apart from the outliers. Q is the false discovery rate you will accept, not a significance level.', minGroups: 1, maxGroups: Infinity, shapes: ['column', 'grouped'] },
+
   { id: 'cox', label: 'Cox proportional hazards', family: 'Modelling', assumes: 'A Survival table plus one or more predictor columns. Hazards are assumed proportional over time.', minGroups: 1, maxGroups: Infinity, shapes: ['survival'] },
 
   { id: 'resourceequation', label: 'Resource equation (animal numbers)', family: 'Study design', assumes: 'No data: a rough check on group sizes when no effect size is available to power against.', minGroups: 1, maxGroups: Infinity, shapes: ['column', 'grouped', 'xy', 'survival'] },
@@ -423,8 +499,8 @@ export const METHODS: MethodInfo[] = [
 export const METHOD_FAMILIES: MethodFamily[] = [
   'Describe', 'One sample', 'Two groups', 'Three or more groups',
   'Two factors', 'X versus Y', 'Survival', 'Categorical counts',
-  'Modelling', 'Agreement', 'Equivalence', 'Meta-analysis', 'Study design',
-  'Assumptions and screening',
+  'Modelling', 'Multivariate', 'Genetics', 'Agreement', 'Equivalence',
+  'Meta-analysis', 'Study design', 'Assumptions and screening',
 ];
 
 export function methodInfo(method: Method): MethodInfo {
@@ -1043,6 +1119,453 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
         warnings: [
           raw.concordanceNote,
           ...(dropped > 0 ? [`${dropped} row(s) were left out because a value was missing.`] : []),
+        ],
+      };
+    }
+
+    if (method === 'mixed') {
+      const values: number[] = [];
+      const subjectLabels: string[] = [];
+      const conditionLabels: string[] = [];
+      const indices = columns.map((column) => columnIndex(table, column.id));
+      table.rows.forEach((row, rowIndex) => {
+        indices.forEach((at, position) => {
+          const value = numericCell(row[at]);
+          if (value === null) return;
+          values.push(value);
+          subjectLabels.push(`Subject ${rowIndex + 1}`);
+          conditionLabels.push(columns[position].name);
+        });
+      });
+
+      const raw: any = designs.mixedModel(values, subjectLabels, conditionLabels);
+      const complete = table.rows.filter((row) =>
+        indices.every((at) => numericCell(row[at]) !== null)).length;
+
+      return {
+        ...base,
+        raw,
+        pValue: raw.pValue,
+        summary: [
+          { label: 'Condition effect', value: formatP(raw.pValue), note: `F(${raw.numeratorDf}, ${raw.denominatorDf}) = ${formatNumber(raw.fStatistic, 3)}` },
+          { label: 'Subjects', value: String(raw.subjects), note: `${raw.n} measurements` },
+          { label: 'Between-subject SD', value: formatNumber(Math.sqrt(raw.subjectVariance)) },
+          { label: 'Within-subject SD', value: formatNumber(Math.sqrt(raw.residualVariance)) },
+          { label: 'ICC', value: formatNumber(raw.intraclassCorrelation, 3), note: 'share of variance that is between subjects' },
+        ],
+        tables: [{
+          title: 'Fixed effects',
+          columns: ['Term', 'Estimate', 'SE', 't', 'P value'],
+          rows: raw.terms.map((term: any) => [
+            term.term, formatNumber(term.estimate), formatNumber(term.standardError),
+            formatNumber(term.t, 3), formatP(term.pValue),
+          ]),
+        }],
+        warnings: raw.subjects < raw.n
+          ? [`${raw.subjects - complete} subject(s) were missing at least one measurement. Unlike repeated-measures ANOVA, they still contribute the measurements they gave.`]
+          : [],
+      };
+    }
+
+    if (method === 'gee') {
+      const outcome = table.columns.find((column) => column.id === analysis.options.outcomeColumn);
+      const cluster = table.columns.find((column) => column.id === analysis.options.groupColumn);
+      if (!outcome || !cluster) {
+        return { ...base, error: 'Choose two columns under Options: the outcome, and the one naming the subject or cluster each measurement belongs to.' };
+      }
+      if (outcome.id === cluster.id) {
+        return { ...base, error: 'The outcome and the cluster must be different columns.' };
+      }
+
+      const predictors = columns.filter(
+        (column) => column.id !== outcome.id && column.id !== cluster.id);
+      if (!predictors.length) {
+        return { ...base, error: 'Needs at least one predictor column besides the outcome and the cluster.' };
+      }
+
+      const outcomeAt = columnIndex(table, outcome.id);
+      const clusterAt = columnIndex(table, cluster.id);
+      const predictorAt = predictors.map((column) => columnIndex(table, column.id));
+
+      const y: number[] = [];
+      const clusters: string[] = [];
+      const x: number[][] = predictors.map(() => []);
+      let dropped = 0;
+      for (const row of table.rows) {
+        const value = numericCell(row[outcomeAt]);
+        const label = String(row[clusterAt] ?? '').trim();
+        const predictorValues = predictorAt.map((at) => numericCell(row[at]));
+        if (value === null || !label || predictorValues.some((entry) => entry === null)) { dropped += 1; continue; }
+        y.push(value);
+        clusters.push(label);
+        predictorValues.forEach((entry, index) => x[index].push(entry as number));
+      }
+
+      const raw: any = designs.gee(x, y, clusters, {
+        family: analysis.options.geeFamily ?? 'gaussian',
+        names: predictors.map((column) => column.name),
+      });
+
+      return {
+        ...base,
+        raw,
+        pValue: raw.terms[1]?.pValue ?? null,
+        summary: [
+          { label: 'Clusters', value: String(raw.clusters), note: `${raw.n} measurements` },
+          { label: 'Working correlation', value: formatNumber(raw.workingCorrelation, 3), note: 'exchangeable' },
+          ...raw.terms.slice(1, 4).map((term: any) => ({
+            label: term.term, value: formatNumber(term.estimate, 4), note: `P ${formatP(term.pValue)}`,
+          })),
+        ],
+        tables: [{
+          title: 'Population-average effects',
+          columns: ['Term', 'Estimate', 'Robust SE', '95% CI', 'z', 'P value'],
+          rows: raw.terms.map((term: any) => [
+            term.term, formatNumber(term.estimate, 4), formatNumber(term.standardError, 4),
+            `${formatNumber(term.confidenceInterval95[0], 3)} to ${formatNumber(term.confidenceInterval95[1], 3)}`,
+            formatNumber(term.z, 3), formatP(term.pValue),
+          ]),
+        }],
+        warnings: [
+          ...(raw.clusters < 15 ? [`Only ${raw.clusters} clusters. The robust standard errors need more than that to be trustworthy — about forty is the usual advice.`] : []),
+          ...(dropped > 0 ? [`${dropped} row(s) were left out because a value was missing.`] : []),
+        ],
+      };
+    }
+
+    if (method === 'pca') {
+      const matrix = completeRows(table, columns.map((column) => column.id));
+      if (columns.length < 2) {
+        return { ...base, error: `Principal components need at least two variables; ${columns.length} column(s) are selected.` };
+      }
+      if (matrix.length < 3) {
+        return { ...base, error: `Only ${matrix.length} row(s) have a value in every selected column. Principal components need at least three complete samples.` };
+      }
+
+      const raw: any = multivariate.pca(matrix, { scale: analysis.options.scaleVariables ?? true });
+      const dropped = table.rows.length - matrix.length;
+
+      return {
+        ...base,
+        raw: { ...raw, variableNames: columns.map((column) => column.name) },
+        pValue: null,
+        summary: [
+          { label: 'PC1', value: `${(raw.explained[0] * 100).toFixed(1)}%`, note: 'of the variance' },
+          { label: 'PC2', value: `${(raw.explained[1] * 100).toFixed(1)}%`, note: `${(raw.cumulative[1] * 100).toFixed(1)}% together` },
+          { label: 'Components kept', value: String(raw.kaiser), note: 'eigenvalue above the average' },
+          { label: 'Samples', value: String(raw.n), note: `${raw.variables} variables` },
+        ],
+        tables: [
+          {
+            title: 'Variance explained',
+            columns: ['Component', 'SD', 'Proportion', 'Cumulative'],
+            rows: raw.explained.map((share: number, index: number) => [
+              `PC${index + 1}`, formatNumber(raw.standardDeviations[index], 4),
+              `${(share * 100).toFixed(1)}%`, `${(raw.cumulative[index] * 100).toFixed(1)}%`,
+            ]),
+          },
+          {
+            title: 'Loadings',
+            columns: ['Variable', ...raw.explained.slice(0, 4).map((_: number, index: number) => `PC${index + 1}`)],
+            rows: columns.map((column, index) => [
+              column.name,
+              ...raw.loadings[index].slice(0, 4).map((value: number) => formatNumber(value, 3)),
+            ]),
+          },
+        ],
+        warnings: [
+          ...(raw.scaled ? [] : ['Scaling is off, so a variable measured in larger numbers will dominate the components whatever it means. Turn it on unless every column is in the same unit.']),
+          ...(dropped > 0 ? [`${dropped} row(s) were left out because a selected column was blank.`] : []),
+        ],
+      };
+    }
+
+    if (method === 'cluster') {
+      const matrix = completeRows(table, columns.map((column) => column.id));
+      if (matrix.length < 3) {
+        return { ...base, error: `Only ${matrix.length} row(s) have a value in every selected column; clustering needs at least three.` };
+      }
+      if (columns.length < 2) {
+        return { ...base, error: 'Clustering needs at least two variables to measure distance in.' };
+      }
+
+      const replicates = Math.max(50, Math.min(2000, analysis.options.resamples ?? 500));
+      const raw: any = multivariate.bootstrapSupport(matrix, {
+        metric: analysis.options.distanceMetric ?? 'euclidean',
+        linkage: analysis.options.linkage ?? 'average',
+        replicates,
+        random: seededRandom(seedFrom(matrix.flat())),
+      });
+
+      const k = Math.max(2, Math.min(matrix.length, analysis.options.clusterCount ?? 2));
+      const membership = multivariate.cutTree(raw, k);
+      const weak = raw.support.filter((value: number) => value < 0.7).length;
+
+      return {
+        ...base,
+        raw: { ...raw, membership, k },
+        pValue: null,
+        summary: [
+          { label: 'Samples', value: String(matrix.length), note: `${columns.length} variables` },
+          { label: 'Distance', value: raw.metric, note: `${raw.linkage} linkage` },
+          { label: 'Well supported', value: `${raw.support.length - weak} of ${raw.support.length}`, note: 'branches at 70% or better' },
+        ],
+        tables: [
+          {
+            title: 'Branch support',
+            columns: ['Branch', 'Members', 'Height', 'Bootstrap'],
+            rows: raw.support.map((value: number, index: number) => [
+              index + 1,
+              raw.clusters[index].map((member: number) => member + 1).join(', '),
+              formatNumber(raw.heights[index], 3),
+              `${(value * 100).toFixed(0)}%`,
+            ]),
+          },
+          {
+            title: `Membership, cut into ${k}`,
+            columns: ['Row', 'Cluster'],
+            rows: membership.map((cluster: number, index: number) => [index + 1, cluster]),
+          },
+        ],
+        warnings: weak > 0
+          ? [`${weak} branch(es) are supported below 70 per cent of ${replicates} bootstrap replicates. Every method returns clusters, including on noise; those branches are not evidence of anything.`]
+          : [],
+      };
+    }
+
+    if (method === 'anosim' || method === 'plsda') {
+      const grouping = table.columns.find((column) => column.id === analysis.options.groupColumn);
+      if (!grouping) {
+        return { ...base, error: `Choose the column that names the ${method === 'anosim' ? 'group' : 'class'} under Options.` };
+      }
+
+      const variables = columns.filter((column) => column.id !== grouping.id);
+      if (variables.length < 2) {
+        return { ...base, error: `Needs at least two measured variables besides "${grouping.name}"; ${variables.length} are selected.` };
+      }
+
+      const groupAt = columnIndex(table, grouping.id);
+      const variableAt = variables.map((column) => columnIndex(table, column.id));
+      const matrix: number[][] = [];
+      const labels: string[] = [];
+      let dropped = 0;
+      for (const row of table.rows) {
+        const label = String(row[groupAt] ?? '').trim();
+        const values = variableAt.map((at) => numericCell(row[at]));
+        if (!label || values.some((value) => value === null)) { dropped += 1; continue; }
+        matrix.push(values as number[]);
+        labels.push(label);
+      }
+
+      const random = seededRandom(seedFrom(matrix.flat()));
+
+      if (method === 'anosim') {
+        const permutations = Math.max(99, Math.min(9999, analysis.options.resamples ?? 999));
+        const raw: any = multivariate.anosim(matrix, labels, {
+          metric: analysis.options.distanceMetric ?? 'euclidean',
+          permutations,
+          random,
+        });
+        return {
+          ...base,
+          raw: { ...raw, labels },
+          pValue: raw.pValue,
+          summary: [
+            { label: 'R', value: formatNumber(raw.statistic, 3), note: raw.statistic > 0.75 ? 'groups are well separated' : raw.statistic > 0.25 ? 'groups overlap somewhat' : 'groups are barely distinguishable' },
+            { label: 'P value', value: formatP(raw.pValue), note: `${raw.permutations} permutations` },
+            { label: 'Groups', value: String(raw.groups), note: `${raw.n} samples` },
+          ],
+          tables: [],
+          warnings: [
+            'A group that is simply more variable than the others can raise R on its own. Check the spread within each group before reading this as separation.',
+            ...(dropped > 0 ? [`${dropped} row(s) were left out because a value was missing.`] : []),
+          ],
+        };
+      }
+
+      const raw: any = multivariate.plsda(matrix, labels, { components: 2 });
+      const important = raw.vip
+        .map((value: number, index: number) => ({ name: variables[index].name, value }))
+        .filter((entry: any) => entry.value > 1)
+        .sort((a: any, b: any) => b.value - a.value);
+
+      return {
+        ...base,
+        raw: { ...raw, labels, variableNames: variables.map((column) => column.name) },
+        pValue: null,
+        summary: [
+          { label: 'Accuracy', value: `${(raw.accuracy * 100).toFixed(0)}%`, note: 'leave-one-out' },
+          { label: 'Baseline', value: `${(raw.baseline * 100).toFixed(0)}%`, note: 'always guessing the commonest class' },
+          { label: 'Classes', value: String(raw.classes.length), note: `${raw.n} samples` },
+        ],
+        tables: [{
+          title: 'Variable importance',
+          columns: ['Variable', 'VIP'],
+          rows: raw.vip
+            .map((value: number, index: number) => [variables[index].name, formatNumber(value, 3)])
+            .sort((a: any[], b: any[]) => Number(b[1]) - Number(a[1])),
+        }],
+        warnings: [
+          ...(raw.accuracy <= raw.baseline
+            ? ['The cross-validated accuracy does not beat guessing the commonest class, so this model has learned nothing.']
+            : []),
+          ...(variables.length > matrix.length
+            ? [`There are more variables (${variables.length}) than samples (${matrix.length}). A PLS-DA model can separate anything under those conditions, including noise, which is why only the cross-validated accuracy above means anything.`]
+            : []),
+          ...(important.length ? [] : ['No variable has a VIP above 1, so none contributes more than its share.']),
+          ...(dropped > 0 ? [`${dropped} row(s) were left out because a value was missing.`] : []),
+        ],
+      };
+    }
+
+    if (method === 'tdt') {
+      const transmitted = analysis.options.transmittedCount;
+      const untransmitted = analysis.options.untransmittedCount;
+      if (transmitted === undefined || untransmitted === undefined) {
+        return { ...base, error: 'Enter both counts under Options: heterozygous parents who transmitted the allele, and those who did not.' };
+      }
+      const raw: any = designs.transmissionDisequilibrium(transmitted, untransmitted);
+      return {
+        ...base,
+        raw,
+        pValue: raw.pValue,
+        summary: [
+          { label: 'χ²', value: formatNumber(raw.statistic, 3), note: 'on 1 degree of freedom' },
+          { label: 'P value', value: formatP(raw.pValue) },
+          { label: 'Transmission ratio', value: formatNumber(raw.transmissionRatio, 3), note: `${formatNumber(raw.confidenceInterval95[0], 2)} to ${formatNumber(raw.confidenceInterval95[1], 2)}` },
+          { label: 'Informative parents', value: String(raw.informativeParents) },
+        ],
+        tables: [{
+          title: 'Transmissions from heterozygous parents',
+          columns: ['Transmitted', 'Not transmitted'],
+          rows: [[raw.transmitted, raw.untransmitted]],
+        }],
+        warnings: raw.informativeParents < 20
+          ? [`Only ${raw.informativeParents} informative parents. The chi-square approximation is unreliable below about twenty.`]
+          : [],
+      };
+    }
+
+    if (method === 'mendelian') {
+      if (columns.length < 3) {
+        return { ...base, error: `Needs three columns in this order: effect on the exposure, effect on the outcome, and the standard error of that outcome effect. ${columns.length} are selected.` };
+      }
+      const matrix = completeRows(table, columns.slice(0, 3).map((column) => column.id));
+      if (matrix.length < 3) {
+        return { ...base, error: `Only ${matrix.length} instrument(s) have all three values. Mendelian randomisation needs at least three.` };
+      }
+
+      const raw: any = designs.mendelianRandomization(matrix.map((row) => ({
+        exposureBeta: row[0], outcomeBeta: row[1], outcomeSe: row[2],
+      })));
+
+      return {
+        ...base,
+        raw,
+        pValue: raw.ivw.pValue,
+        summary: [
+          { label: 'IVW estimate', value: formatNumber(raw.ivw.estimate, 4), note: `${formatNumber(raw.ivw.confidenceInterval95[0], 3)} to ${formatNumber(raw.ivw.confidenceInterval95[1], 3)}` },
+          { label: 'P value', value: formatP(raw.ivw.pValue) },
+          { label: 'Egger intercept', value: formatNumber(raw.egger.intercept, 4), note: `P ${formatP(raw.egger.interceptPValue)} — a value away from zero means pleiotropy` },
+          { label: 'Instruments', value: String(raw.instruments) },
+        ],
+        tables: [{
+          title: 'Three estimators of the same causal effect',
+          columns: ['Method', 'Estimate', 'SE', 'P value'],
+          rows: [
+            ['Inverse-variance weighted', formatNumber(raw.ivw.estimate, 4), formatNumber(raw.ivw.standardError, 4), formatP(raw.ivw.pValue)],
+            ['MR-Egger slope', formatNumber(raw.egger.slope, 4), formatNumber(raw.egger.slopeSe, 4), formatP(raw.egger.slopePValue)],
+            ['Weighted median', formatNumber(raw.weightedMedian, 4), '—', '—'],
+          ],
+        }],
+        warnings: [
+          ...(raw.egger.interceptPValue < 0.05
+            ? ['The MR-Egger intercept differs from zero, which is what directional pleiotropy looks like. The inverse-variance weighted estimate above is biased; prefer the Egger slope or the weighted median.']
+            : []),
+          ...(raw.heterogeneity.pValue < 0.05
+            ? [`The instruments disagree about the causal effect (Q = ${formatNumber(raw.heterogeneity.q, 2)} on ${raw.heterogeneity.df} df, P ${formatP(raw.heterogeneity.pValue)}, I² = ${(raw.heterogeneity.iSquared * 100).toFixed(0)}%). At least one is not measuring what the others are.`]
+            : []),
+        ],
+      };
+    }
+
+    if (method === 'simon') {
+      const p0 = analysis.options.responseNull ?? 0.05;
+      const p1 = analysis.options.responseTarget ?? 0.25;
+      const raw: any = designs.simonTwoStage(
+        p0, p1,
+        analysis.options.alphaLevel ?? 0.05,
+        1 - (analysis.options.powerTarget ?? 0.8)
+      );
+      const line = (design: any) =>
+        `${design.r1}/${design.n1} then ${design.r}/${design.n}`;
+
+      return {
+        ...base,
+        raw,
+        pValue: null,
+        summary: [
+          { label: 'Optimal design', value: line(raw.optimal), note: `expected N ${raw.optimal.expectedN.toFixed(1)} if the drug does not work` },
+          { label: 'Minimax design', value: line(raw.minimax), note: `never more than ${raw.minimax.n} patients` },
+          { label: 'Stops early', value: `${(raw.optimal.probabilityEarlyStop * 100).toFixed(0)}%`, note: 'of the time, if the drug does not work' },
+        ],
+        tables: [{
+          title: 'Both designs',
+          columns: ['Design', 'Stage 1', 'Stage 2', 'Expected N', 'Stops early', 'Size', 'Power'],
+          rows: [raw.optimal, raw.minimax].map((design: any, index: number) => [
+            index === 0 ? 'Optimal' : 'Minimax',
+            `more than ${design.r1} of ${design.n1}`,
+            `more than ${design.r} of ${design.n}`,
+            design.expectedN.toFixed(1),
+            `${(design.probabilityEarlyStop * 100).toFixed(0)}%`,
+            design.alpha.toFixed(4),
+            design.power.toFixed(4),
+          ]),
+        }],
+        warnings: [
+          `Both designs stop early only for futility: fewer than ${raw.optimal.r1 + 1} responses in the first ${raw.optimal.n1} patients ends the trial. Neither allows stopping early for a good result.`,
+          'Accrual has to pause while stage one is assessed, which is usually the hardest part of running one of these.',
+        ],
+      };
+    }
+
+    if (method === 'rout') {
+      const q = Math.max(0.0001, Math.min(0.5, analysis.options.falseDiscoveryRate ?? 0.01));
+      const perColumn = columns.map((column) => {
+        const values = columnValues(table, column.id);
+        if (values.length < 4) {
+          return { column, error: `only ${values.length} value(s)` };
+        }
+        return { column, result: designs.routOutliers(values, { q }) as any };
+      });
+
+      const usable = perColumn.filter((entry) => entry.result);
+      if (!usable.length) {
+        return { ...base, error: `Every selected column has fewer than four values. ROUT needs at least four to tell an outlier from a small sample.` };
+      }
+
+      const total = usable.reduce((sum, entry) => sum + entry.result.flagged, 0);
+      return {
+        ...base,
+        raw: { q, columns: usable.map((entry) => ({ name: entry.column.name, ...entry.result })) },
+        pValue: null,
+        summary: [
+          { label: 'Outliers found', value: String(total), note: `across ${usable.length} column(s)` },
+          { label: 'Q', value: `${(q * 100).toFixed(1)}%`, note: 'false discovery rate accepted' },
+        ],
+        tables: [{
+          title: 'Flagged values',
+          columns: ['Column', 'Row', 'Value', 'Robust centre', 'Distance in robust SD'],
+          rows: usable.flatMap((entry) =>
+            entry.result.outliers.map((outlier: any) => [
+              entry.column.name, outlier.index + 1,
+              formatNumber(outlier.value), formatNumber(entry.result.centre),
+              formatNumber(outlier.t, 2),
+            ])),
+        }],
+        warnings: [
+          'A flagged point is a question about the experiment, not permission to delete a number. Look at each one and decide from the bench, not the statistics.',
+          ...perColumn.filter((entry) => entry.error).map((entry) => `"${entry.column.name}" was skipped: ${entry.error}.`),
         ],
       };
     }

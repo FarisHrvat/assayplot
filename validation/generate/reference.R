@@ -373,6 +373,118 @@ if (requireNamespace("survival", quietly = TRUE)) {
       "Efron tie handling, one binary predictor")
 }
 
+# ---- multivariate ------------------------------------------------------
+mv <- matrix(c(
+  5.1,3.5,1.4,0.2, 4.9,3.0,1.4,0.2, 4.7,3.2,1.3,0.2, 4.6,3.1,1.5,0.2,
+  7.0,3.2,4.7,1.4, 6.4,3.2,4.5,1.5, 6.9,3.1,4.9,1.5, 5.5,2.3,4.0,1.3,
+  6.3,3.3,6.0,2.5, 5.8,2.7,5.1,1.9, 7.1,3.0,5.9,2.1, 6.3,2.9,5.6,1.8),
+  ncol = 4, byrow = TRUE)
+mv_rows <- lapply(seq_len(nrow(mv)), function(i) as.numeric(mv[i, ]))
+
+# Eigenvector signs are arbitrary, so parity is checked on magnitudes.
+for (sc in c(TRUE, FALSE)) {
+  pc <- prcomp(mv, scale. = sc)
+  add(paste0("pca_", if (sc) "scaled" else "raw"), "pca",
+      list(rows = mv_rows, scale = sc),
+      list(standardDeviations = as.numeric(pc$sdev),
+           explained = as.numeric(pc$sdev^2 / sum(pc$sdev^2)),
+           absLoadings1 = as.numeric(abs(pc$rotation[, 1])),
+           absLoadings2 = as.numeric(abs(pc$rotation[, 2])),
+           absScores1 = as.numeric(abs(pc$x[, 1]))),
+      if (sc) "prcomp on the correlation matrix" else "prcomp on the covariance matrix")
+}
+
+for (lk in list(c("average", "average"), c("complete", "complete"),
+                c("single", "single"), c("ward", "ward.D2"))) {
+  h <- hclust(dist(mv), method = lk[2])
+  add(paste0("hclust_", lk[1]), "hierarchicalCluster",
+      list(rows = mv_rows, linkage = lk[1]),
+      list(heights = as.numeric(h$height),
+           merges = as.numeric(t(h$merge)),
+           cut3 = as.numeric(cutree(h, 3))),
+      paste("hclust", lk[2], "on Euclidean distance"))
+}
+
+for (metric in list(c("manhattan", "manhattan"), c("maximum", "maximum"))) {
+  h <- hclust(dist(mv, method = metric[2]), method = "average")
+  add(paste0("hclust_", metric[1]), "hierarchicalCluster",
+      list(rows = mv_rows, linkage = "average", metric = metric[1]),
+      list(heights = as.numeric(h$height)),
+      paste("average linkage on", metric[2], "distance"))
+}
+
+# ---- designs and specialised models -------------------------------------
+if (requireNamespace("vegan", quietly = TRUE)) {
+  an_g <- rep(c("a", "b", "c"), each = 4)
+  an <- vegan::anosim(dist(mv), factor(an_g), permutations = 99)
+  add("anosim", "anosim", list(rows = mv_rows, groups = an_g),
+      list(statistic = unname(an$statistic)),
+      "vegan::anosim on Euclidean distance; only R is compared, the p-value is a permutation")
+}
+
+if (requireNamespace("nlme", quietly = TRUE)) {
+  mm <- data.frame(
+    y = c(12,15,19, 11,14,18, 13,16,21, 10,13,17, 14,18,22, 12,14),
+    subject = factor(c(rep(1:5, each = 3), 6, 6)),
+    cond = factor(c(rep(c("A","B","C"), 5), "A", "B")))
+  lm_fit <- nlme::lme(y ~ cond, random = ~1 | subject, data = mm, method = "REML")
+  tt <- summary(lm_fit)$tTable
+  av <- anova(lm_fit)
+  add("mixed_repeated", "mixedModel",
+      list(values = mm$y, subjects = as.character(mm$subject), conditions = as.character(mm$cond)),
+      list(estimates = unname(tt[, 1]), standardErrors = unname(tt[, 2]),
+           subjectSd = as.numeric(nlme::VarCorr(lm_fit)[1, 2]),
+           residualSd = as.numeric(nlme::VarCorr(lm_fit)[2, 2]),
+           fStatistic = av[2, "F-value"], denominatorDf = av[2, "denDF"],
+           restrictedLogLikelihood = as.numeric(logLik(lm_fit))),
+      "nlme::lme with one random intercept, unbalanced")
+}
+
+if (requireNamespace("geepack", quietly = TRUE)) {
+  gd <- data.frame(
+    y = c(2.1,3.0,3.9, 1.8,2.6,3.4, 2.5,3.4,4.1, 1.5,2.2,3.0, 2.9,3.6,4.6, 2.0,2.8,3.5),
+    x = rep(c(1, 2, 3), 6), id = rep(1:6, each = 3))
+  gm <- geepack::geeglm(y ~ x, id = id, data = gd, family = gaussian, corstr = "exchangeable")
+  gs <- summary(gm)
+  add("gee_gaussian", "gee",
+      list(x = gd$x, y = gd$y, clusters = as.character(gd$id), family = "gaussian"),
+      list(estimates = unname(gs$coefficients[, 1]), standardErrors = unname(gs$coefficients[, 2]),
+           workingCorrelation = unname(gs$corr[1, 1]), dispersion = unname(gs$dispersion[1, 1])),
+      "exchangeable working correlation, sandwich standard errors")
+
+  gb <- data.frame(
+    y = c(1,1,0, 0,1,0, 1,1,1, 0,0,0, 1,0,1, 1,1,0),
+    x = rep(c(1, 2, 3), 6), id = rep(1:6, each = 3))
+  gmb <- geepack::geeglm(y ~ x, id = id, data = gb, family = binomial, corstr = "exchangeable")
+  gsb <- summary(gmb)
+  add("gee_binomial", "gee",
+      list(x = gb$x, y = gb$y, clusters = as.character(gb$id), family = "binomial"),
+      list(estimates = unname(gsb$coefficients[, 1]), standardErrors = unname(gsb$coefficients[, 2]),
+           workingCorrelation = unname(gsb$corr[1, 1])),
+      "binomial GEE, exchangeable")
+}
+
+tdt_b <- 34; tdt_c <- 16
+tdt <- mcnemar.test(matrix(c(0, tdt_b, tdt_c, 0), 2), correct = FALSE)
+add("tdt", "transmissionDisequilibrium", list(transmitted = tdt_b, untransmitted = tdt_c),
+    list(statistic = unname(tdt$statistic), pValue = tdt$p.value),
+    "McNemar without continuity correction, which is what a TDT is")
+
+mr_bx <- c(0.10, 0.15, 0.08, 0.20, 0.12, 0.18, 0.09)
+mr_by <- c(0.05, 0.08, 0.03, 0.11, 0.07, 0.09, 0.04)
+mr_sy <- c(0.02, 0.03, 0.015, 0.04, 0.02, 0.03, 0.02)
+mr_w <- 1 / mr_sy^2
+mr_ivw <- lm(mr_by ~ 0 + mr_bx, weights = mr_w)
+mr_egg <- lm(mr_by ~ mr_bx, weights = mr_w)
+mr_es <- summary(mr_egg)$coefficients
+add("mendelian", "mendelianRandomization",
+    list(exposureBeta = mr_bx, outcomeBeta = mr_by, outcomeSe = mr_sy),
+    list(ivwEstimate = unname(coef(mr_ivw)), eggerSlope = unname(coef(mr_egg)[2]),
+         eggerIntercept = unname(coef(mr_egg)[1]),
+         eggerSlopeSe = unname(mr_es[2, 2]), eggerInterceptSe = unname(mr_es[1, 2]),
+         eggerInterceptPValue = unname(mr_es[1, 4])),
+    "IVW as weighted regression through the origin, MR-Egger with a free intercept")
+
 out <- list(
   generatedBy = paste("R", getRversion()),
   note = "Golden values produced by R. Regenerate with validation/generate/reference.R.",

@@ -31,7 +31,13 @@ export function normalQuantile(p) {
 // From the incomplete gamma, not a polynomial erf: Abramowitz-Stegun carries
 // 1.5e-7 absolute error, which destroys relative accuracy in the tail.
 export function normalCdf(x) {
+  if (Number.isNaN(x)) return NaN;
   if (!Number.isFinite(x)) return x > 0 ? 1 : 0;
+  // Past about 38 standard deviations the tail is below the smallest double a
+  // computer can hold, and x squared overflows well before the answer would
+  // have stopped being 0 or 1 anyway.
+  if (x >= 38) return 1;
+  if (x <= -38) return 0;
   const tail = 0.5 * regularizedGammaQ(0.5, (x * x) / 2);
   return x >= 0 ? 1 - tail : tail;
 }

@@ -52,6 +52,198 @@ export const SHAPE_HELP: Record<TableShape, { title: string; body: string; examp
 };
 
 export const METHOD_HELP: Record<Method, MethodHelp> = {
+  mixed: {
+    answers: 'Did the measurement change across conditions, using every value each subject gave?',
+    needs: 'One row per subject, one column per condition. Blanks are fine.',
+    assumes: [
+      'Each subject contributes a constant offset of their own — some people simply read high, others low.',
+      'The residual scatter is roughly normal and of similar size in every condition.',
+      'Missing values are missing for reasons unrelated to what the value would have been.',
+    ],
+    doesNot: [
+      'Discard a subject who missed one measurement, which is what repeated-measures ANOVA has to do.',
+      'Model anything more complicated than one offset per subject. Two crossed random effects need a specialist tool.',
+    ],
+    how: [
+      'Lay the table out with subjects down the rows and conditions across the columns.',
+      'Pick Mixed-effects model. Leave the blanks blank.',
+      'Read the F for the condition effect, then the per-condition contrasts beneath it.',
+    ],
+    reports: 'The fixed-effect estimates with standard errors, F with both degrees of freedom, P, and the two variance components. Say which software fitted it and that estimation was REML.',
+    insteadUse: 'Repeated-measures ANOVA only if the design is complete and balanced, in which case the two agree exactly.',
+  },
+
+  gee: {
+    answers: 'On average across the population, how does the outcome change with the predictor when measurements are clustered?',
+    needs: 'One row per measurement: the outcome, a column naming the subject or cluster, and one or more predictors.',
+    assumes: [
+      'The mean model is right. The correlation structure need not be: the standard errors are robust to getting it wrong.',
+      'Clusters are independent of one another, even though measurements inside one are not.',
+      'Enough clusters for the robust variance to settle down — about forty is the usual advice, and fewer than fifteen is uncomfortable.',
+    ],
+    doesNot: [
+      'Estimate what happens within one subject. That is what a mixed model does, and for a binary outcome the two answers genuinely differ.',
+      'Handle missing values that depend on the unobserved outcome.',
+    ],
+    how: [
+      'Choose the outcome column and the column naming the cluster under Options.',
+      'Every other selected column is a predictor.',
+      'Read the coefficients: they are population-average effects with sandwich standard errors.',
+    ],
+    reports: 'Coefficients with robust standard errors and confidence intervals, the working correlation used, and the number of clusters.',
+    insteadUse: 'A mixed-effects model when the question is about change within an individual rather than a shift in the population average.',
+  },
+
+  pca: {
+    answers: 'How many independent things is this table actually measuring, and which variables move together?',
+    needs: 'One row per sample, one column per measured variable.',
+    assumes: [
+      'The interesting structure is linear. Components are straight-line combinations of the variables.',
+      'Scaling is a decision, not a detail: without it the variable with the largest numbers dominates regardless of what it means.',
+    ],
+    doesNot: [
+      'Test anything. There is no p-value in a PCA and none is implied.',
+      'Know about your groups. It finds the directions of most variance, which need not be the directions that separate treatments.',
+    ],
+    how: [
+      'Pick Principal component analysis, and turn on scaling if the columns are in different units.',
+      'Read the scree: how much variance each component explains, and how quickly it falls off.',
+      'Read the loadings to see which variables define each component.',
+    ],
+    reports: 'The percentage of variance explained by each retained component, the scaling used, and the loadings of the components you interpret.',
+    insteadUse: 'PLS-DA when you want the directions that separate known groups rather than the directions of most variance.',
+  },
+
+  cluster: {
+    answers: 'Which samples group together, and is the grouping real?',
+    needs: 'One row per sample, one column per variable.',
+    assumes: [
+      'The distance chosen reflects what you mean by similar. Euclidean distance treats a large variable as more important; correlation distance treats shape as what matters.',
+      'Every clustering method returns clusters, including on noise. The bootstrap is what separates a branch from an artefact.',
+    ],
+    doesNot: [
+      'Decide how many clusters there are. Cutting the tree is your judgement, informed by the support values.',
+      'Test whether groups differ. Use ANOSIM for that.',
+    ],
+    how: [
+      'Choose a distance and a linkage; average linkage on Euclidean distance is the usual default.',
+      'Read the bootstrap support beside each branch.',
+      'Treat anything under about 70 per cent as undecided.',
+    ],
+    reports: 'The distance, the linkage, the number of bootstrap replicates, and the support for every branch you draw a conclusion from.',
+  },
+
+  anosim: {
+    answers: 'Are samples within a group more alike than samples from different groups?',
+    needs: 'One row per sample, one column naming its group, and the measured variables in the rest.',
+    assumes: [
+      'The dissimilarities are meaningful. Everything else is handled by permuting the labels.',
+      'Groups are of roughly similar spread — a group that is simply more variable can produce a large R on its own.',
+    ],
+    doesNot: [
+      'Say which variables drive the separation, or by how much. R measures separation, not effect size in any unit you can report.',
+    ],
+    how: [
+      'Choose the column that names the group under Options.',
+      'Read R: near 0 means the groups are indistinguishable, near 1 means every sample is closer to its own group than to any other.',
+    ],
+    reports: 'R, the number of permutations, and P. Say which dissimilarity was used.',
+  },
+
+  plsda: {
+    answers: 'Can these variables tell my classes apart, and which ones do the work?',
+    needs: 'One row per sample, one column naming its class, the measured variables in the rest.',
+    assumes: [
+      'Nothing distributional, but a great deal about honesty: with more variables than samples a PLS-DA model can separate anything, including random noise.',
+    ],
+    doesNot: [
+      'Prove the classes differ. Only the cross-validated accuracy speaks to that, and it must beat the rate you would get by guessing the commonest class.',
+      'Give a p-value. If you need one, permute the labels and refit.',
+    ],
+    how: [
+      'Choose the column naming the class under Options.',
+      'Compare the leave-one-out accuracy against the baseline shown beside it.',
+      'Read the VIP scores: above 1 marks a variable that contributes more than its share.',
+    ],
+    reports: 'The number of components, the cross-validated accuracy against the baseline rate, and the variables with VIP above 1.',
+    insteadUse: 'PCA first, always. If the classes already separate without being told about, the supervised model is not doing the work.',
+  },
+
+  tdt: {
+    answers: 'Is this allele transmitted to affected children more often than chance?',
+    needs: 'The count of heterozygous parents who transmitted the allele and the count who did not.',
+    assumes: [
+      'Parents are heterozygous at the marker; homozygous parents carry no information and are excluded.',
+      'One affected child per family, or the correlation between siblings has to be accounted for.',
+    ],
+    doesNot: [
+      'Suffer from population structure. That is the whole point: each parent is their own control.',
+      'Distinguish linkage from association on its own in a single family study.',
+    ],
+    how: [
+      'Count the transmissions and enter both numbers under Options.',
+      'Read the chi-square on one degree of freedom and the transmission ratio.',
+    ],
+    reports: 'Both counts, chi-square, P, and the transmission ratio with its confidence interval.',
+  },
+
+  mendelian: {
+    answers: 'Does the exposure cause the outcome, judged from genetic variants that affect the exposure?',
+    needs: 'One row per instrument: its effect on the exposure, its effect on the outcome, and the standard error of that outcome effect.',
+    assumes: [
+      'Every instrument really does affect the exposure. Weak ones bias the answer towards the confounded association.',
+      'No instrument affects the outcome except through the exposure. This is the assumption that fails, and MR-Egger exists to detect it.',
+      'No instrument shares a confounder with the outcome.',
+    ],
+    doesNot: [
+      'Prove causation. It tests one causal model against a very specific set of assumptions, none of which can be verified from the data alone.',
+    ],
+    how: [
+      'Put the three columns in the table in that order, or select them under Columns used.',
+      'Compare the three estimates. Agreement between them is the evidence; disagreement means pleiotropy.',
+      'Check the MR-Egger intercept: if it differs from zero, the IVW estimate is biased.',
+    ],
+    reports: 'All three estimates with confidence intervals, the MR-Egger intercept and its P value, and the heterogeneity statistic.',
+  },
+
+  simon: {
+    answers: 'How many patients does a single-arm phase II trial need, and when may it stop early?',
+    needs: 'No data. Two response rates: the one not worth pursuing, and the one that is.',
+    assumes: [
+      'A binary response assessed the same way in every patient.',
+      'Accrual can pause while stage one is assessed, which in practice is the hard part.',
+    ],
+    doesNot: [
+      'Allow stopping early for a good result. Both designs stop only for futility.',
+      'Cover randomised trials, or continuous outcomes.',
+    ],
+    how: [
+      'Enter both response rates and the error rates you will accept.',
+      'The optimal design has the smallest expected size if the drug does not work; the minimax design has the smallest maximum size.',
+    ],
+    reports: 'Both stages as r1/n1 and r/n, the expected sample size under the null, the chance of stopping early, and the exact size and power achieved.',
+  },
+
+  rout: {
+    answers: 'Which of these points are outliers, without one outlier hiding another?',
+    needs: 'One or more columns of measurements.',
+    assumes: [
+      'The points that are not outliers are roughly normal around a common value.',
+      'Q is a false discovery rate: at 1 per cent, about one in a hundred flagged points is expected to be a false alarm.',
+    ],
+    doesNot: [
+      'Give you permission to delete data. An outlier is a question about the experiment, not a licence to remove an inconvenient number.',
+      'Work on values that are legitimately skewed, such as concentrations, unless they are transformed first.',
+    ],
+    how: [
+      'Pick ROUT and set Q, usually 1 per cent.',
+      'Look at every flagged point and decide, from the experiment rather than the statistics, whether it is a mistake.',
+      'If you exclude a point, say so in the paper and say why.',
+    ],
+    reports: 'The value of Q, how many points were flagged, and what was done about each. Analyses with and without them is better still.',
+    insteadUse: "Grubbs's test if you are looking for exactly one outlier and want the classical test.",
+  },
+
   descriptive: {
     answers: 'What do these columns look like?',
     needs: 'Any Column, Grouped or XY table.',

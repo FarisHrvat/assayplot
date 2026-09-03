@@ -16,6 +16,8 @@ import * as posthoc from '../src/core/posthoc.js';
 import * as diagnostics from '../src/core/diagnostics.js';
 import * as agreement from '../src/core/agreement.js';
 import * as regression from '../src/core/regression.js';
+import * as multivariate from '../src/core/multivariate.js';
+import * as designs from '../src/core/designs.js';
 
 const fixtures = JSON.parse(
   readFileSync(new URL('../validation/fixtures/reference.json', import.meta.url), 'utf8')
@@ -97,6 +99,63 @@ const RUNNERS = {
     };
   },
 
+  pca: ({ rows, scale }) => {
+    const fit = multivariate.pca(rows, { scale });
+    return {
+      standardDeviations: fit.standardDeviations,
+      explained: fit.explained,
+      absLoadings1: fit.loadings.map((row) => Math.abs(row[0])),
+      absLoadings2: fit.loadings.map((row) => Math.abs(row[1])),
+      absScores1: fit.scores.map((row) => Math.abs(row[0])),
+    };
+  },
+  hierarchicalCluster: ({ rows, linkage, metric }) => {
+    const tree = multivariate.hierarchicalCluster(rows, { linkage, metric: metric ?? 'euclidean' });
+    return {
+      heights: tree.heights,
+      merges: tree.merges.flat(),
+      cut3: multivariate.cutTree(tree, 3),
+    };
+  },
+
+  anosim: ({ rows, groups }) => multivariate.anosim(rows, groups, { permutations: 9 }),
+  mixedModel: ({ values, subjects, conditions }) => {
+    const fit = designs.mixedModel(values, subjects, conditions);
+    return {
+      estimates: fit.terms.map((term) => term.estimate),
+      standardErrors: fit.terms.map((term) => term.standardError),
+      subjectSd: Math.sqrt(fit.subjectVariance),
+      residualSd: Math.sqrt(fit.residualVariance),
+      fStatistic: fit.fStatistic,
+      denominatorDf: fit.denominatorDf,
+      restrictedLogLikelihood: fit.restrictedLogLikelihood,
+    };
+  },
+  gee: ({ x, y, clusters, family }) => {
+    const fit = designs.gee([x], y, clusters, { family, names: ['x'] });
+    return {
+      estimates: fit.terms.map((term) => term.estimate),
+      standardErrors: fit.terms.map((term) => term.standardError),
+      workingCorrelation: fit.workingCorrelation,
+      dispersion: fit.dispersion,
+    };
+  },
+  transmissionDisequilibrium: ({ transmitted, untransmitted }) =>
+    designs.transmissionDisequilibrium(transmitted, untransmitted),
+  mendelianRandomization: ({ exposureBeta, outcomeBeta, outcomeSe }) => {
+    const fit = designs.mendelianRandomization(
+      exposureBeta.map((value, index) => ({
+        exposureBeta: value, outcomeBeta: outcomeBeta[index], outcomeSe: outcomeSe[index],
+      }))
+    );
+    return {
+      ivwEstimate: fit.ivw.estimate,
+      eggerSlope: fit.egger.slope, eggerIntercept: fit.egger.intercept,
+      eggerSlopeSe: fit.egger.slopeSe, eggerInterceptSe: fit.egger.interceptSe,
+      eggerInterceptPValue: fit.egger.interceptPValue,
+    };
+  },
+
   mcnemarTest: ({ table }) => agreement.mcnemarTest(table),
   cohensKappa: ({ table }) => agreement.cohensKappa(table),
   tost: ({ a, b, bound }) => agreement.tost(a, b, bound),
@@ -157,6 +216,14 @@ const FIELD_TOLERANCE = {
   lower: 1e-7,
   upper: 1e-7,
   differences: 1e-10,
+  // The mixed model profiles the variance ratio by golden section, which stops
+  // on a flat optimum; nlme uses a derivative-based optimiser and stops at a
+  // marginally different point on the same optimum.
+  // GEE solves an estimating equation whose working correlation and dispersion
+  // are re-estimated each pass, so two implementations settle on the same root
+  // from slightly different directions.
+  standardErrors: 1e-6, estimates: 1e-7, subjectSd: 1e-6, residualSd: 1e-6,
+  fStatistic: 1e-6, workingCorrelation: 1e-8,
 };
 
 /** Fields R reports that AssayPlot deliberately names differently or omits. */
