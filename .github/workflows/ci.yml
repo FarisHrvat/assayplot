@@ -83,7 +83,14 @@ jobs:
             librsvg2-dev patchelf build-essential curl wget file libssl-dev \
             libgtk-3-dev libayatana-appindicator3-dev
       - run: npm ci
-      - name: Build installers
+      # macOS is packaged separately: Tauri's DMG step drives Finder over
+      # AppleScript, which no CI runner can satisfy.
+      - name: Build installers (macOS)
+        if: matrix.os == 'macos-latest'
+        run: npm run desktop:dmg
+
+      - name: Build installers (Linux, Windows)
+        if: matrix.os != 'macos-latest'
         run: npm run desktop:build:installers
       - uses: actions/upload-artifact@v4
         with:

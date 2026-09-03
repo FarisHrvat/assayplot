@@ -9,6 +9,7 @@
     "desktop:build": "tauri build --bundles app",
     "desktop:build:installers": "tauri build",
     "desktop:dev": "tauri dev",
+    "desktop:dmg": "npm run desktop:build && bash scripts/make-dmg.sh",
     "dev": "vite",
     "examples": "node scripts/make-examples.mjs",
     "fixtures": "Rscript validation/generate/reference.R",
