@@ -59,7 +59,40 @@ function tablesByPlot(): Record<string, DataTable> {
     [20, 0, 45], [7, 1, 72], [9, 0, 58], [11, 1, 63], [6, 1, 68],
   ];
 
-  return { logisticfit: binary, roc: binary, ancova, hazard: cox };
+  const multivariate = makeTable('Samples', 'column');
+  multivariate.columns = [
+    makeColumn('Sepal length'), makeColumn('Sepal width'),
+    makeColumn('Petal length'), makeColumn('Petal width'), makeColumn('Species'),
+  ];
+  multivariate.rows = [
+    [5.1, 3.5, 1.4, 0.2, 'setosa'], [4.9, 3.0, 1.4, 0.2, 'setosa'],
+    [4.7, 3.2, 1.3, 0.2, 'setosa'], [4.6, 3.1, 1.5, 0.2, 'setosa'],
+    [7.0, 3.2, 4.7, 1.4, 'versicolor'], [6.4, 3.2, 4.5, 1.5, 'versicolor'],
+    [6.9, 3.1, 4.9, 1.5, 'versicolor'], [5.5, 2.3, 4.0, 1.3, 'versicolor'],
+    [6.3, 3.3, 6.0, 2.5, 'virginica'], [5.8, 2.7, 5.1, 1.9, 'virginica'],
+    [7.1, 3.0, 5.9, 2.1, 'virginica'], [6.3, 2.9, 5.6, 1.8, 'virginica'],
+  ];
+
+  const instruments = makeTable('Instruments', 'column');
+  instruments.columns = [makeColumn('On exposure'), makeColumn('On outcome'), makeColumn('SE')];
+  instruments.rows = [
+    [0.10, 0.05, 0.02], [0.15, 0.08, 0.03], [0.08, 0.03, 0.015], [0.20, 0.11, 0.04],
+    [0.12, 0.07, 0.02], [0.18, 0.09, 0.03], [0.09, 0.04, 0.02],
+  ];
+
+  const contaminated = makeTable('With outliers', 'column');
+  contaminated.columns = [makeColumn('Replicate A'), makeColumn('Replicate B')];
+  contaminated.rows = [
+    [10.1, 9.9], [9.8, 10.2], [10.4, 10.0], [9.9, 9.7], [10.2, 10.3],
+    [10.0, 10.1], [9.7, 9.8], [10.3, 10.4], [25, 10.0], [30, 9.95],
+  ];
+
+  return {
+    logisticfit: binary, roc: binary, ancova, hazard: cox,
+    pcascore: multivariate, scree: multivariate, dendrogram: multivariate,
+    clusterheatmap: multivariate, plsscore: multivariate, anosimbox: multivariate,
+    mrscatter: instruments, outliers: contaminated,
+  };
 }
 
 function render(table: DataTable, plotType: PlotType, style = {}) {

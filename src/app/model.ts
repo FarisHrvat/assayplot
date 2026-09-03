@@ -203,7 +203,9 @@ export type PlotType =
   | 'heatmap' | 'correlation'
   | 'pie' | 'donut'
   | 'survival' | 'blandaltman' | 'forest'
-  | 'logisticfit' | 'roc' | 'ancova' | 'hazard';
+  | 'logisticfit' | 'roc' | 'ancova' | 'hazard'
+  | 'pcascore' | 'scree' | 'dendrogram' | 'clusterheatmap' | 'plsscore'
+  | 'anosimbox' | 'mrscatter' | 'outliers';
 
 export type ErrorBarKind = 'none' | 'sd' | 'sem' | 'ci95' | 'range';
 export type GridKind = 'none' | 'horizontal' | 'vertical' | 'both';

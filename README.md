@@ -23,7 +23,7 @@ concentration or a time, and Survival for time-to-event. It reads `.csv`,
 paste a block straight out of Excel. The grid navigates with the arrow keys and
 handles 100,000 rows.
 
-Twenty-one analyses:
+Forty-three analyses:
 
 | | |
 |---|---|
@@ -34,17 +34,26 @@ Twenty-one analyses:
 | Two factors | Two-way ANOVA with replication |
 | X versus Y | Pearson, Spearman, linear regression, dose–response (EC50/IC50) |
 | Survival | Kaplan–Meier with log-rank |
-| Counts | Chi-square with Yates, Fisher's exact |
-| Assumptions | Shapiro–Wilk, Levene, Bartlett, Grubbs |
+| Counts | Chi-square with Yates, Fisher's exact, McNemar |
+| Modelling | Logistic, Poisson, ANCOVA, mixed effects, GEE, Cox proportional hazards |
+| Multivariate | Principal components, hierarchical clustering with bootstrap, ANOSIM, PLS-DA |
+| Agreement | Cohen's kappa, Bland–Altman, TOST equivalence |
+| Meta-analysis | Cochran's *Q* and *I*², Mantel–Haenszel |
+| Genetics | Transmission disequilibrium, Mendelian randomisation |
+| Study design | Simon's two-stage, resource equation |
+| Assumptions | Shapiro–Wilk, D'Agostino–Pearson, Levene, Bartlett, Grubbs, ROUT |
 
 Post-hoc comparisons are done properly: Tukey HSD with real family-wise
 confidence intervals, Dunn's test after Kruskal–Wallis, each group against a
 control, or Holm and Benjamini–Hochberg on plain pairwise tests.
 
-Twenty-three plot types — bar, dot, box, violin, strip, beeswarm, mean with
+Thirty-seven plot types — bar, dot, box, violin, strip, beeswarm, mean with
 error, lollipop, before/after lines, histogram, density, ECDF, Q–Q, scatter,
-line, area, step, bubble, heatmap, correlation matrix, pie, donut and
-Kaplan–Meier. You edit a figure by clicking it: click the title or an axis
+line, area, step, bubble, heatmap, correlation matrix, pie, donut,
+Kaplan–Meier, Bland–Altman, forest, fitted probability curve, ROC, parallel
+lines by group, hazard ratios, PCA scores with loadings, scree, dendrogram with
+bootstrap support, clustered heatmap, PLS-DA scores, ANOSIM rank
+dissimilarities, Mendelian randomisation scatter, and flagged outliers. You edit a figure by clicking it: click the title or an axis
 label and type over it, click a bar or a curve to select that series and change
 its colour. Gridlines, log axes, error-bar definition, significance brackets and
 exact dimensions are all under your control. Panels assemble into multi-panel
@@ -62,9 +71,10 @@ AssayPlot installed. Work is autosaved and offered back after a crash. Reports
 export as HTML or Markdown, or go straight to a page in your own Notion
 workspace using an integration you create.
 
-Not built yet: repeated-measures ANOVA, three-way ANOVA, mixed models, Cox
-regression, confidence intervals on dose–response parameters, and subcolumn
-replicates.
+Not built yet: three-way ANOVA, crossed random effects, confidence intervals on
+dose–response parameters, and subcolumn replicates. Repeated measures are handled
+by the mixed-effects model, which uses every value a subject gave rather than
+dropping the subject when one is missing.
 
 ## Download
 
@@ -103,12 +113,12 @@ anywhere Node runs; a second CI job regenerates them with R and fails if
 anything has drifted.
 
 ```bash
-npm test          # 180 tests, 36 of them checked against R
+npm test          # 254 tests, 61 of them checked against R
 npm run typecheck
 npm run licenses
 ```
 
-Building that harness found thirteen real defects, none of which a
+Building that harness found seventeen real defects, none of which a
 self-consistent test suite would have caught. A Mann–Whitney tie correction
 wrong by six per cent. Tail p-values that underflowed to zero. A Friedman test
 handed its matrix transposed. A dose–response model with Top and Bottom the
@@ -136,7 +146,8 @@ certificate. [docs/RELEASING.md](docs/RELEASING.md) has the steps.
 ## Layout
 
 ```text
-src/core/      statistics, exact distributions, post-hoc, diagnostics (plain JS, no DOM)
+src/core/      statistics, exact distributions, post-hoc, diagnostics,
+               regression, multivariate, study designs               (plain JS, no DOM)
 src/app/       document model, store, figure engine, interface        (TypeScript, React)
 src-tauri/     desktop shell                                          (Rust, Tauri 2)
 validation/    R scripts and the fixtures they produce
@@ -145,7 +156,7 @@ examples/      worked projects, from npm run examples
 scripts/       icon, examples, DMG, licence check
 ```
 
-Nothing below the interface touches the DOM, which is why 180 tests run in
+Nothing below the interface touches the DOM, which is why 254 tests run in
 Node in a few seconds.
 
 ## Contributing

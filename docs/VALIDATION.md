@@ -92,6 +92,8 @@ was found by comparing against R:
 | Chi-square with an all-zero row or column divided by a zero expected count | Same |
 | Values past ~1e154 overflowed every sum of squares | Statistic and p-value silently became NaN |
 | Rank tests with ties used a normal approximation | Matched R 4.4 but not R 4.5+, which conditions on the observed midranks |
+| The incomplete beta continued fraction applied its first term twice — the term already folded into the initialiser | *F* tails with more than one numerator degree of freedom returned p-values of 3.5 and −0.78 |
+| `normalCdf` returned 0 for NaN, and NaN past about 150 standard deviations where squaring the argument overflows | A p-value of exactly 2 |
 
 The last two matter: the fit was numerically perfect either way,
 so `R²` and the EC50 both looked right. Only an assertion on the *labels* caught
@@ -112,9 +114,14 @@ that must hold whatever the input:
 - Every refusal names something actionable, not "invalid input".
 - An analysis is deterministic and never mutates the table it was given.
 
-These found three further defects: ANOVA dividing 0 by 0 when every value is
-identical, chi-square dividing by a zero expected count, and arithmetic overflow
-past about 1e154 turning every statistic into NaN. `runAnalysis` now enforces
+These found five defects. Three when they were written: ANOVA dividing 0 by 0
+when every value is identical, chi-square dividing by a zero expected count, and
+arithmetic overflow past about 1e154 turning every statistic into NaN. Two more
+when the mixed model and Mendelian randomisation arrived, both in code the whole
+suite already depended on: a continued fraction that applied its first term
+twice, and a normal CDF that returned 0 for NaN and NaN for a very large
+argument. Neither had shown up in any fixture, because no fixture had a reason
+to evaluate an *F* tail on two numerator degrees of freedom or a *z* of 10²⁰⁰. `runAnalysis` now enforces
 the p-value invariant globally, so anything not caught by a specific guard
 becomes an explanation rather than reaching the screen.
 
@@ -131,7 +138,9 @@ becomes an explanation rather than reaching the screen.
 
 ## Coverage
 
-**Every statistical procedure AssayPlot ships has a golden fixture.** 36 cases:
+**Every statistical procedure AssayPlot ships has a golden fixture**, or, where
+no implementation exists to compare against, an external oracle of another kind.
+61 fixture cases:
 
 | Area | Procedures |
 |---|---|
@@ -144,11 +153,38 @@ becomes an explanation rather than reaching the screen.
 | Assumptions | Shapiro–Wilk, Levene (Brown–Forsythe), Bartlett, Grubbs |
 | Survival | Kaplan–Meier, log-rank |
 | Multiplicity | Holm, Benjamini–Hochberg |
+| Agreement | McNemar, Cohen's kappa, TOST, Bland–Altman, Mantel–Haenszel, Cochran's Q |
+| Modelling | Logistic and Poisson regression (`glm`), ANCOVA (`lm` with `drop1`), Cox (`survival::coxph`, Efron ties), mixed effects (`nlme::lme`, REML), GEE (`geepack::geeglm`, exchangeable) |
+| Multivariate | Principal components (`prcomp`, scaled and unscaled), hierarchical clustering (`hclust` × four linkages × three distances, with `cutree`), ANOSIM (`vegan::anosim`) |
+| Genetics | Transmission disequilibrium (`mcnemar.test` without continuity correction), Mendelian randomisation (weighted `lm`, with and without an intercept) |
 
 Levene, Dunn, Grubbs, and the 4PL fit are computed in the fixture script from
 their published formulae in base R rather than by importing `car`, `dunn.test`
 and `drc` — the same arithmetic those packages implement, and CI stays free of
-extra R dependencies.
+extra R dependencies. The `nlme`, `geepack` and `vegan` cases are guarded by
+`requireNamespace`, so the generator still runs on a bare R and simply writes
+fewer cases; CI installs all three.
+
+### The three without an R oracle
+
+**Simon's two-stage design** is checked against the table published with the
+method in 1989. `tests/designs.test.js` reproduces five entries — both the
+optimal and the minimax design for each — as exact integers, which is a stronger
+check than a tolerance: the search either finds the published `r1/n1, r/n` or it
+does not.
+
+**PLS-DA** has no reference implementation in base R, and `mixOmics` and `ropls`
+disagree with each other on scaling and on how VIP is defined. The NIPALS
+decomposition itself is checked by its defining property — successive components
+are orthogonal and reconstruct the deflated matrix — and the number that is
+actually reported to the user is the leave-one-out accuracy, which is computed by
+refitting rather than by any formula that could be subtly wrong.
+
+**ROUT** has no published per-dataset values to compare against, so it is tested
+on the two claims the method makes: it finds a pair of outliers without either
+masking the other, which is what it exists to do and what Grubbs cannot do; and
+its false discovery rate on clean normal samples stays under the rate asked for,
+measured over a thousand samples from a fixed generator.
 
 ## What validation does not mean
 

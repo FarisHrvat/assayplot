@@ -14,6 +14,10 @@ import * as stats from '../core/stats.js';
 import { normalQuantile } from '../core/diagnostics.js';
 // @ts-ignore
 import * as regression from '../core/regression.js';
+// @ts-ignore
+import * as multivariate from '../core/multivariate.js';
+// @ts-ignore
+import * as designs from '../core/designs.js';
 import { getSettings } from './settings.ts';
 import {
   type AnalysisResult,
@@ -183,7 +187,7 @@ function formatTick(value: number): string {
 
 const MARGIN = { top: 40, right: 26, bottom: 58, left: 66 };
 
-export type PlotGroup = 'Compare groups' | 'Distribution' | 'X versus Y' | 'Matrix' | 'Parts of a whole' | 'Survival' | 'Agreement' | 'Model';
+export type PlotGroup = 'Compare groups' | 'Distribution' | 'X versus Y' | 'Matrix' | 'Parts of a whole' | 'Survival' | 'Agreement' | 'Model' | 'Multivariate';
 
 export interface PlotKind {
   id: PlotType;
@@ -230,9 +234,18 @@ export const PLOT_KINDS: PlotKind[] = [
   { id: 'roc', label: 'ROC curve', group: 'Model', shape: 'column' },
   { id: 'ancova', label: 'Parallel lines by group (ANCOVA)', group: 'Model', shape: 'xy' },
   { id: 'hazard', label: 'Hazard ratios (Cox)', group: 'Model', shape: 'survival' },
+  { id: 'mrscatter', label: 'Mendelian randomisation scatter', group: 'Model', shape: 'column' },
+  { id: 'outliers', label: 'Outliers (ROUT)', group: 'Model', shape: 'column' },
+
+  { id: 'pcascore', label: 'PCA score plot', group: 'Multivariate', shape: 'column' },
+  { id: 'scree', label: 'Scree plot', group: 'Multivariate', shape: 'column' },
+  { id: 'dendrogram', label: 'Dendrogram with bootstrap', group: 'Multivariate', shape: 'column' },
+  { id: 'clusterheatmap', label: 'Clustered heatmap', group: 'Multivariate', shape: 'column' },
+  { id: 'plsscore', label: 'PLS-DA score plot', group: 'Multivariate', shape: 'column' },
+  { id: 'anosimbox', label: 'ANOSIM rank dissimilarities', group: 'Multivariate', shape: 'column' },
 ];
 
-export const PLOT_GROUPS: PlotGroup[] = ['Compare groups', 'Distribution', 'X versus Y', 'Matrix', 'Parts of a whole', 'Survival', 'Agreement', 'Model'];
+export const PLOT_GROUPS: PlotGroup[] = ['Compare groups', 'Distribution', 'X versus Y', 'Matrix', 'Parts of a whole', 'Survival', 'Agreement', 'Model', 'Multivariate'];
 
 export function plotsForShape(shape: TableShape): PlotKind[] {
   // A Grouped table plots like a Column table: its value columns are the series.
@@ -315,6 +328,12 @@ export function Plot(props: PlotProps) {
   if (plotType === 'roc') return canvas(<RocPlot {...shared} />);
   if (plotType === 'ancova') return canvas(<AncovaPlot {...shared} />);
   if (plotType === 'hazard') return canvas(<HazardPlot {...shared} />);
+  if (plotType === 'mrscatter') return canvas(<MendelianPlot {...shared} />);
+  if (plotType === 'outliers') return canvas(<OutlierPlot {...shared} />);
+  if (plotType === 'pcascore' || plotType === 'scree') return canvas(<PcaPlot {...shared} />);
+  if (plotType === 'dendrogram' || plotType === 'clusterheatmap') return canvas(<ClusterPlot {...shared} />);
+  if (plotType === 'plsscore') return canvas(<PlsPlot {...shared} />);
+  if (plotType === 'anosimbox') return canvas(<AnosimPlot {...shared} />);
   if (plotType === 'heatmap' || plotType === 'correlation') return canvas(<MatrixPlot {...shared} />);
   if (plotType === 'pie' || plotType === 'donut') return canvas(<PiePlot {...shared} />);
   if (DISTRIBUTION_PLOTS.includes(plotType)) return canvas(<DistributionPlot {...shared} />);
@@ -1861,6 +1880,647 @@ function HazardPlot(props: any) {
           {style.xLabel || 'Hazard ratio (log scale)'}
         </text>
       </g>
+    </>
+  );
+}
+
+/**
+ * Splits a table into a numeric matrix and, where one exists, the column of
+ * text that names each row's group. Which column that is has to be inferred:
+ * a figure outlives the analysis it was drawn beside.
+ */
+function matrixAndLabels(table: DataTable) {
+  const numeric: { column: any; index: number }[] = [];
+  let labels: { column: any; index: number } | null = null;
+
+  table.columns.forEach((column, index) => {
+    if (['ignore', 'time', 'event'].includes(column.role)) return;
+    const values = table.rows.map((row) => row[index]).filter((value) => value !== null && value !== '');
+    if (!values.length) return;
+    const numericShare = values.filter((value) => Number.isFinite(Number(value))).length / values.length;
+    if (numericShare > 0.8) numeric.push({ column, index });
+    else if (!labels) labels = { column, index };
+  });
+
+  const rows: number[][] = [];
+  const rowLabels: string[] = [];
+  const sourceRows: number[] = [];
+  table.rows.forEach((row, rowIndex) => {
+    const values = numeric.map((entry) => {
+      const cell = row[entry.index];
+      return cell === null || cell === '' ? null : Number(cell);
+    });
+    if (values.some((value) => value === null || !Number.isFinite(value))) return;
+    rows.push(values as number[]);
+    rowLabels.push(labels ? String(row[(labels as any).index] ?? '') : `${rowIndex + 1}`);
+    sourceRows.push(rowIndex);
+  });
+
+  return {
+    rows,
+    variables: numeric.map((entry) => entry.column),
+    labelColumn: labels as any,
+    rowLabels,
+    sourceRows,
+    groups: labels ? rowLabels : null,
+  };
+}
+
+/**
+ * Principal components, either as a score plot with the loadings drawn over it
+ * or as the scree that says how many components are worth reading. Both are
+ * the same fit, so they share a component.
+ */
+function PcaPlot(props: any) {
+  const { table, figure, plotLeft, plotRight, plotTop, plotBottom, font, legendPlacement } = props;
+  const style: FigureStyle = figure.style;
+  const data = matrixAndLabels(table);
+
+  if (data.variables.length < 2 || data.rows.length < 3) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Needs at least two numeric columns and three complete rows" />;
+  }
+
+  let fit: any;
+  try {
+    fit = multivariate.pca(data.rows, { scale: true });
+  } catch (problem) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message={problem instanceof Error ? problem.message : 'The components could not be found'} />;
+  }
+
+  if (figure.plotType === 'scree') {
+    const shares = fit.explained;
+    const step = (plotRight - plotLeft) / shares.length;
+    const yScale = makeScale(0, Math.max(...shares), plotBottom, plotTop);
+    const ticks = niceTicks(0, Math.max(...shares));
+
+    return (
+      <>
+        <Grid style={style} xTicks={[]} yTicks={ticks} xScale={makeScale(0, 1, plotLeft, plotRight)} yScale={yScale}
+          plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
+        <YAxis {...props} ticks={ticks} yScale={yScale} />
+
+        {/* The average eigenvalue: components above it carry more than their share. */}
+        <line x1={plotLeft} x2={plotRight} y1={yScale.toPixel(1 / fit.variables)} y2={yScale.toPixel(1 / fit.variables)}
+          stroke="#999" strokeWidth={1} strokeDasharray="4 3" />
+
+        {shares.map((share: number, index: number) => (
+          <g key={index}>
+            <rect x={plotLeft + index * step + step * 0.15} y={yScale.toPixel(share)}
+              width={step * 0.7} height={plotBottom - yScale.toPixel(share)}
+              fill={colorFor(style, `pc${index}`, index)}>
+              <title>{`PC${index + 1}: ${(share * 100).toFixed(1)}% of the variance`}</title>
+            </rect>
+            <text x={plotLeft + index * step + step / 2} y={plotBottom + font + 4}
+              textAnchor="middle" fontSize={font - 1} fill="#555">PC{index + 1}</text>
+          </g>
+        ))}
+        <polyline fill="none" stroke="#555" strokeWidth={1.4}
+          points={fit.cumulative.map((value: number, index: number) =>
+            `${plotLeft + index * step + step / 2},${yScale.toPixel(value * Math.max(...shares))}`).join(' ')} />
+        <text x={(plotLeft + plotRight) / 2} y={props.xLabelY} textAnchor="middle" fontSize={font} fill="#333">
+          {style.xLabel || 'Component'}
+        </text>
+      </>
+    );
+  }
+
+  const xs = fit.scores.map((row: number[]) => row[0]);
+  const ys = fit.scores.map((row: number[]) => row[1]);
+  const pad = (list: number[]) => (Math.max(...list) - Math.min(...list)) * 0.1 || 1;
+  const xLow = style.xMin ?? Math.min(...xs) - pad(xs);
+  const xHigh = style.xMax ?? Math.max(...xs) + pad(xs);
+  const yLow = style.yMin ?? Math.min(...ys) - pad(ys);
+  const yHigh = style.yMax ?? Math.max(...ys) + pad(ys);
+  const xScale = makeScale(xLow, xHigh, plotLeft, plotRight);
+  const yScale = makeScale(yLow, yHigh, plotBottom, plotTop);
+
+  const groups = data.groups ? [...new Set(data.groups)] : ['All'];
+  const groupIndex = (row: number) => (data.groups ? groups.indexOf(data.groups[row]) : 0);
+  const arrowScale = Math.min(xHigh - xLow, yHigh - yLow) * 0.4;
+
+  return (
+    <>
+      <Grid style={style} xTicks={niceTicks(xLow, xHigh)} yTicks={niceTicks(yLow, yHigh)}
+        xScale={xScale} yScale={yScale}
+        plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
+      <YAxis {...props} ticks={niceTicks(yLow, yHigh)} yScale={yScale} />
+      <XAxisNumeric {...props} ticks={niceTicks(xLow, xHigh)} xScale={xScale}
+        fallbackLabel={`PC1 (${(fit.explained[0] * 100).toFixed(1)}%)`} />
+
+      {xLow < 0 && xHigh > 0 && (
+        <line x1={xScale.toPixel(0)} x2={xScale.toPixel(0)} y1={plotTop} y2={plotBottom} stroke="#DDD" />
+      )}
+      {yLow < 0 && yHigh > 0 && (
+        <line x1={plotLeft} x2={plotRight} y1={yScale.toPixel(0)} y2={yScale.toPixel(0)} stroke="#DDD" />
+      )}
+
+      {/* Loading arrows: which variables pull in which direction. */}
+      {data.variables.map((variable: any, index: number) => {
+        const dx = fit.loadings[index][0] * arrowScale;
+        const dy = fit.loadings[index][1] * arrowScale;
+        return (
+          <g key={variable.id}>
+            <line x1={xScale.toPixel(0)} y1={yScale.toPixel(0)}
+              x2={xScale.toPixel(dx)} y2={yScale.toPixel(dy)}
+              stroke="#8A9895" strokeWidth={1.2} />
+            <text x={xScale.toPixel(dx * 1.08)} y={yScale.toPixel(dy * 1.08)}
+              textAnchor="middle" fontSize={font - 2} fill="#6B7A77">{variable.name}</text>
+          </g>
+        );
+      })}
+
+      {fit.scores.map((row: number[], index: number) => {
+        const which = groupIndex(index);
+        return (
+          <Marker key={index} x={xScale.toPixel(row[0])} y={yScale.toPixel(row[1])}
+            r={style.pointSize + 0.5} shape={shapeFor(which)}
+            fill={colorFor(style, groups[which], which)} fillOpacity={0.85}
+            stroke="#fff" strokeWidth={0.8}>
+            <title>{`${data.rowLabels[index]}: PC1 ${row[0].toFixed(2)}, PC2 ${row[1].toFixed(2)}`}</title>
+          </Marker>
+        );
+      })}
+
+      {style.showLegend && data.groups && (
+        <Legend placement={legendPlacement} font={font}
+          items={groups.map((name, index) => ({ label: name, color: colorFor(style, name, index), shapeIndex: index }))} />
+      )}
+    </>
+  );
+}
+
+/**
+ * A dendrogram, with bootstrap support written on each branch, or the same tree
+ * drawn beside a heatmap so the rows are ordered by similarity rather than by
+ * the order they were typed in.
+ */
+function ClusterPlot(props: any) {
+  const { table, figure, plotLeft, plotRight, plotTop, plotBottom, font } = props;
+  const style: FigureStyle = figure.style;
+  const data = matrixAndLabels(table);
+
+  if (data.variables.length < 2 || data.rows.length < 3) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Needs at least two numeric columns and three complete rows" />;
+  }
+
+  let tree: any;
+  try {
+    tree = multivariate.bootstrapSupport(data.rows, {
+      metric: 'euclidean',
+      linkage: 'average',
+      replicates: 200,
+      random: seededRandom(data.rows.flat()),
+    });
+  } catch (problem) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message={problem instanceof Error ? problem.message : 'The tree could not be built'} />;
+  }
+
+  const n = tree.n;
+  const heatmap = figure.plotType === 'clusterheatmap';
+  const treeRight = heatmap ? plotLeft + (plotRight - plotLeft) * 0.28 : plotRight;
+  const maxHeight = Math.max(...tree.heights);
+  const heightScale = makeScale(0, maxHeight, treeRight, plotLeft + 4);
+  const leafStep = (plotBottom - plotTop) / n;
+  const leafY = (leaf: number) => plotTop + leafStep * (tree.order.indexOf(leaf) + 0.5);
+
+  // Each merge is drawn as a bracket. Positions are resolved bottom up, so a
+  // node always knows where its children ended up.
+  const nodeY: number[] = [];
+  const branches: React.ReactNode[] = [];
+  tree.merges.forEach((merge: number[], index: number) => {
+    const [left, right] = merge;
+    const yLeft = left < 0 ? leafY(-left - 1) : nodeY[left - 1];
+    const yRight = right < 0 ? leafY(-right - 1) : nodeY[right - 1];
+    const xLeft = left < 0 ? heightScale.toPixel(0) : heightScale.toPixel(tree.heights[left - 1]);
+    const xRight = right < 0 ? heightScale.toPixel(0) : heightScale.toPixel(tree.heights[right - 1]);
+    const x = heightScale.toPixel(tree.heights[index]);
+    nodeY[index] = (yLeft + yRight) / 2;
+
+    const support = tree.support[index];
+    branches.push(
+      <g key={index}>
+        <path d={`M ${xLeft} ${yLeft} L ${x} ${yLeft} L ${x} ${yRight} L ${xRight} ${yRight}`}
+          fill="none" stroke={support >= 0.7 ? '#3C6E63' : '#B9C4C1'} strokeWidth={support >= 0.7 ? 1.6 : 1.1} />
+        {index >= n - 6 && (
+          <text x={x - 3} y={nodeY[index] - 3} textAnchor="end" fontSize={font - 3}
+            fill={support >= 0.7 ? '#3C6E63' : '#9AA8A5'}>
+            {(support * 100).toFixed(0)}
+          </text>
+        )}
+      </g>
+    );
+  });
+
+  const labels = tree.order.map((leaf: number, position: number) => (
+    <text key={leaf} x={heatmap ? treeRight + 3 : treeRight + 4}
+      y={plotTop + leafStep * (position + 0.5) + 3}
+      textAnchor="start" fontSize={Math.min(font - 2, leafStep)} fill="#555">
+      {data.rowLabels[leaf]}
+    </text>
+  ));
+
+  if (!heatmap) {
+    return (
+      <>
+        {branches}
+        {labels}
+        <text x={(plotLeft + treeRight) / 2} y={props.xLabelY} textAnchor="middle" fontSize={font} fill="#333">
+          {style.xLabel || 'Distance'}
+        </text>
+      </>
+    );
+  }
+
+  // Heatmap panel, rows in the tree's order so neighbouring rows are similar.
+  const gridLeft = treeRight + 46;
+  const cellWidth = (plotRight - gridLeft) / data.variables.length;
+  const flat = data.rows.flat();
+  const low = Math.min(...flat);
+  const high = Math.max(...flat);
+
+  return (
+    <>
+      {branches}
+      {labels}
+      {tree.order.map((leaf: number, position: number) =>
+        data.variables.map((variable: any, columnIndex: number) => {
+          const value = data.rows[leaf][columnIndex];
+          const t = (2 * (value - low)) / (high - low || 1) - 1;
+          return (
+            <rect key={`${leaf}-${columnIndex}`}
+              x={gridLeft + columnIndex * cellWidth} y={plotTop + position * leafStep}
+              width={Math.max(cellWidth - 1, 1)} height={Math.max(leafStep - 1, 1)}
+              fill={divergingColor(t)} stroke="#fff" strokeWidth={0.4}>
+              <title>{`${data.rowLabels[leaf]} · ${variable.name} · ${value}`}</title>
+            </rect>
+          );
+        })
+      )}
+      {data.variables.map((variable: any, columnIndex: number) => (
+        <text key={variable.id} x={gridLeft + columnIndex * cellWidth + cellWidth / 2}
+          y={plotTop + n * leafStep + 14} textAnchor="middle" fontSize={font - 2} fill="#444">
+          {variable.name}
+        </text>
+      ))}
+    </>
+  );
+}
+
+/** A generator seeded from the data, so the same table always draws the same tree. */
+function seededRandom(values: number[]) {
+  let state = 2166136261;
+  for (const value of values) state = Math.imul(state ^ (Math.round(value * 1e6) | 0), 16777619);
+  state >>>= 0;
+  return () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    state >>>= 0;
+    return state / 0x100000000;
+  };
+}
+
+/** PLS-DA scores: the projection that best separates the classes, by design. */
+function PlsPlot(props: any) {
+  const { table, figure, plotLeft, plotRight, plotTop, plotBottom, font, legendPlacement } = props;
+  const style: FigureStyle = figure.style;
+  const data = matrixAndLabels(table);
+
+  if (!data.groups) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Needs a text column naming each sample's class" />;
+  }
+  if (data.variables.length < 2 || data.rows.length < 4) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Needs at least two numeric columns and four complete rows" />;
+  }
+
+  let fit: any;
+  try {
+    fit = multivariate.plsda(data.rows, data.groups, { components: 2 });
+  } catch (problem) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message={problem instanceof Error ? problem.message : 'The model could not be fitted'} />;
+  }
+
+  const xs = fit.scores.map((row: number[]) => row[0] ?? 0);
+  const ys = fit.scores.map((row: number[]) => row[1] ?? 0);
+  const pad = (list: number[]) => (Math.max(...list) - Math.min(...list)) * 0.12 || 1;
+  const xLow = style.xMin ?? Math.min(...xs) - pad(xs);
+  const xHigh = style.xMax ?? Math.max(...xs) + pad(xs);
+  const yLow = style.yMin ?? Math.min(...ys) - pad(ys);
+  const yHigh = style.yMax ?? Math.max(...ys) + pad(ys);
+  const xScale = makeScale(xLow, xHigh, plotLeft, plotRight);
+  const yScale = makeScale(yLow, yHigh, plotBottom, plotTop);
+  const classes: string[] = fit.classes;
+
+  return (
+    <>
+      <Grid style={style} xTicks={niceTicks(xLow, xHigh)} yTicks={niceTicks(yLow, yHigh)}
+        xScale={xScale} yScale={yScale}
+        plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
+      <YAxis {...props} ticks={niceTicks(yLow, yHigh)} yScale={yScale} />
+      <XAxisNumeric {...props} ticks={niceTicks(xLow, xHigh)} xScale={xScale} fallbackLabel="Component 1" />
+
+      {fit.scores.map((row: number[], index: number) => {
+        const which = classes.indexOf(data.groups![index]);
+        return (
+          <Marker key={index} x={xScale.toPixel(row[0] ?? 0)} y={yScale.toPixel(row[1] ?? 0)}
+            r={style.pointSize + 0.5} shape={shapeFor(which)}
+            fill={colorFor(style, classes[which], which)} fillOpacity={0.85}
+            stroke="#fff" strokeWidth={0.8}>
+            <title>{`${data.rowLabels[index]} · ${data.groups![index]}`}</title>
+          </Marker>
+        );
+      })}
+
+      {/* The number that matters is the cross-validated one, so it goes on the figure. */}
+      <text x={plotRight - 4} y={plotTop + font} textAnchor="end" fontSize={font - 1}
+        fill={fit.accuracy > fit.baseline ? '#3C6E63' : '#B4544A'}>
+        {(fit.accuracy * 100).toFixed(0)}% correct, leave-one-out ({(fit.baseline * 100).toFixed(0)}% by guessing)
+      </text>
+
+      {style.showLegend && (
+        <Legend placement={legendPlacement} font={font}
+          items={classes.map((name, index) => ({ label: name, color: colorFor(style, name, index), shapeIndex: index }))} />
+      )}
+    </>
+  );
+}
+
+/**
+ * The picture ANOSIM's R is computed from: the rank dissimilarities within
+ * groups against those between them. If the left box sits below the right one,
+ * R is positive and the groups separate.
+ */
+function AnosimPlot(props: any) {
+  const { table, figure, plotLeft, plotRight, plotTop, plotBottom, font } = props;
+  const style: FigureStyle = figure.style;
+  const data = matrixAndLabels(table);
+
+  if (!data.groups) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Needs a text column naming each sample's group" />;
+  }
+  if (data.rows.length < 4 || data.variables.length < 1) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Needs at least four complete rows and one numeric column" />;
+  }
+
+  let result: any;
+  try {
+    result = multivariate.anosim(data.rows, data.groups, {
+      permutations: 999,
+      random: seededRandom(data.rows.flat()),
+    });
+  } catch (problem) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message={problem instanceof Error ? problem.message : 'R could not be computed'} />;
+  }
+
+  const distance = multivariate.distanceMatrix(data.rows, 'euclidean');
+  const flat: { value: number; within: boolean }[] = [];
+  for (let i = 0; i < data.rows.length - 1; i += 1) {
+    for (let j = i + 1; j < data.rows.length; j += 1) {
+      flat.push({ value: distance[i][j], within: data.groups[i] === data.groups[j] });
+    }
+  }
+  const order = flat.map((entry, index) => ({ ...entry, index })).sort((a, b) => a.value - b.value);
+  order.forEach((entry, rank) => { flat[entry.index].value = rank + 1; });
+
+  const boxes = [
+    { label: 'Within groups', values: flat.filter((entry) => entry.within).map((entry) => entry.value) },
+    { label: 'Between groups', values: flat.filter((entry) => !entry.within).map((entry) => entry.value) },
+  ].filter((box) => box.values.length > 0);
+
+  const yScale = makeScale(0, flat.length, plotBottom, plotTop);
+  const ticks = niceTicks(0, flat.length);
+  const step = (plotRight - plotLeft) / boxes.length;
+
+  const quantile = (sorted: number[], q: number) => {
+    const position = q * (sorted.length - 1);
+    const low = Math.floor(position);
+    const high = Math.min(low + 1, sorted.length - 1);
+    return sorted[low] + (sorted[high] - sorted[low]) * (position - low);
+  };
+
+  return (
+    <>
+      <Grid style={style} xTicks={[]} yTicks={ticks} xScale={makeScale(0, 1, plotLeft, plotRight)} yScale={yScale}
+        plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
+      <YAxis {...props} ticks={ticks} yScale={yScale} />
+
+      {boxes.map((box, index) => {
+        const sorted = box.values.slice().sort((a, b) => a - b);
+        const median = quantile(sorted, 0.5);
+        const lower = quantile(sorted, 0.25);
+        const upper = quantile(sorted, 0.75);
+        const centre = plotLeft + step * (index + 0.5);
+        const width = Math.min(step * 0.5, 70);
+        const colour = colorFor(style, box.label, index);
+        return (
+          <g key={box.label}>
+            <line x1={centre} x2={centre} y1={yScale.toPixel(sorted[0])} y2={yScale.toPixel(sorted[sorted.length - 1])}
+              stroke="#666" strokeWidth={1} />
+            <rect x={centre - width / 2} y={yScale.toPixel(upper)}
+              width={width} height={Math.max(yScale.toPixel(lower) - yScale.toPixel(upper), 1)}
+              fill={colour} fillOpacity={0.55} stroke={colour} strokeWidth={1.4} />
+            <line x1={centre - width / 2} x2={centre + width / 2}
+              y1={yScale.toPixel(median)} y2={yScale.toPixel(median)} stroke="#2A3634" strokeWidth={1.8} />
+            <text x={centre} y={plotBottom + font + 4} textAnchor="middle" fontSize={font - 1} fill="#555">
+              {box.label}
+            </text>
+          </g>
+        );
+      })}
+
+      <text x={plotRight - 4} y={plotTop + font} textAnchor="end" fontSize={font - 1} fill="#444">
+        R = {result.statistic.toFixed(3)}, P = {result.pValue < 0.001 ? '< 0.001' : result.pValue.toFixed(3)}
+      </text>
+    </>
+  );
+}
+
+/**
+ * Mendelian randomisation: each instrument's effect on the exposure against its
+ * effect on the outcome, with the two estimators drawn through them. An Egger
+ * line that misses the origin is what pleiotropy looks like.
+ */
+function MendelianPlot(props: any) {
+  const { table, figure, plotLeft, plotRight, plotTop, plotBottom, font, legendPlacement } = props;
+  const style: FigureStyle = figure.style;
+  const columns = valueColumns(table);
+  if (columns.length < 3) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message="Needs three columns: effect on the exposure, effect on the outcome, and the standard error of the second" />;
+  }
+
+  const indices = columns.slice(0, 3).map((column) => table.columns.findIndex((entry: any) => entry.id === column.id));
+  const instruments: { exposureBeta: number; outcomeBeta: number; outcomeSe: number }[] = [];
+  for (const row of table.rows) {
+    const [bx, by, se] = indices.map((index) => Number(row[index]));
+    if (indices.some((index) => row[index] === null || row[index] === '')) continue;
+    if (![bx, by, se].every(Number.isFinite) || !(se > 0)) continue;
+    instruments.push({ exposureBeta: bx, outcomeBeta: by, outcomeSe: se });
+  }
+
+  let fit: any;
+  try {
+    fit = designs.mendelianRandomization(instruments);
+  } catch (problem) {
+    return <EmptyPlot width={style.width} height={style.height}
+      message={problem instanceof Error ? problem.message : 'The estimate could not be computed'} />;
+  }
+
+  const oriented = instruments.map((row) => (row.exposureBeta < 0
+    ? { ...row, exposureBeta: -row.exposureBeta, outcomeBeta: -row.outcomeBeta } : row));
+  const xs = oriented.map((row) => row.exposureBeta);
+  const ys = oriented.map((row) => row.outcomeBeta);
+  const xLow = style.xMin ?? Math.min(0, ...xs);
+  const xHigh = style.xMax ?? Math.max(...xs) * 1.05;
+  const yPad = (Math.max(...ys) - Math.min(...ys)) * 0.15 || 1;
+  const yLow = style.yMin ?? Math.min(0, ...ys.map((value, i) => value - 1.96 * oriented[i].outcomeSe)) - yPad;
+  const yHigh = style.yMax ?? Math.max(...ys.map((value, i) => value + 1.96 * oriented[i].outcomeSe)) + yPad;
+  const xScale = makeScale(xLow, xHigh, plotLeft, plotRight);
+  const yScale = makeScale(yLow, yHigh, plotBottom, plotTop);
+
+  const lines = [
+    { label: 'Inverse-variance weighted', intercept: 0, slope: fit.ivw.estimate, dash: 'none' },
+    { label: 'MR-Egger', intercept: fit.egger.intercept, slope: fit.egger.slope, dash: '6 3' },
+    { label: 'Weighted median', intercept: 0, slope: fit.weightedMedian, dash: '2 3' },
+  ];
+
+  return (
+    <>
+      <Grid style={style} xTicks={niceTicks(xLow, xHigh)} yTicks={niceTicks(yLow, yHigh)}
+        xScale={xScale} yScale={yScale}
+        plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
+      <YAxis {...props} ticks={niceTicks(yLow, yHigh)} yScale={yScale} />
+      <XAxisNumeric {...props} ticks={niceTicks(xLow, xHigh)} xScale={xScale}
+        fallbackLabel={`Effect on the exposure (${columns[0].name})`} />
+
+      {yLow < 0 && yHigh > 0 && (
+        <line x1={plotLeft} x2={plotRight} y1={yScale.toPixel(0)} y2={yScale.toPixel(0)} stroke="#DDD" />
+      )}
+
+      {lines.map((line, index) => (
+        <line key={line.label}
+          x1={xScale.toPixel(xLow)} y1={yScale.toPixel(line.intercept + line.slope * xLow)}
+          x2={xScale.toPixel(xHigh)} y2={yScale.toPixel(line.intercept + line.slope * xHigh)}
+          stroke={colorFor(style, line.label, index)} strokeWidth={1.8} strokeDasharray={line.dash} />
+      ))}
+
+      {oriented.map((row, index) => (
+        <g key={index}>
+          <line x1={xScale.toPixel(row.exposureBeta)} x2={xScale.toPixel(row.exposureBeta)}
+            y1={yScale.toPixel(row.outcomeBeta - 1.96 * row.outcomeSe)}
+            y2={yScale.toPixel(row.outcomeBeta + 1.96 * row.outcomeSe)}
+            stroke="#8A9895" strokeWidth={1} />
+          <Marker x={xScale.toPixel(row.exposureBeta)} y={yScale.toPixel(row.outcomeBeta)}
+            r={style.pointSize} shape={shapeFor(0)} fill="#3C6E63" stroke="#fff" strokeWidth={0.8}>
+            <title>{`instrument ${index + 1}: ratio estimate ${(row.outcomeBeta / row.exposureBeta).toFixed(3)}`}</title>
+          </Marker>
+        </g>
+      ))}
+
+      {style.showLegend && (
+        <Legend placement={legendPlacement} font={font}
+          items={lines.map((line, index) => ({ label: line.label, color: colorFor(style, line.label, index), shapeIndex: index }))} />
+      )}
+    </>
+  );
+}
+
+/**
+ * Every value in the table with the ones ROUT flags ringed, and the robust
+ * centre and spread it judged them against drawn behind. Seeing which points
+ * were flagged, and how far out they were, is the decision the method leaves
+ * to you.
+ */
+function OutlierPlot(props: any) {
+  const { table, figure, plotLeft, plotRight, plotTop, plotBottom, font, onPickRow } = props;
+  const style: FigureStyle = figure.style;
+  const columns = valueColumns(table);
+  if (!columns.length) {
+    return <EmptyPlot width={style.width} height={style.height} message="Enter some numbers in the data table" />;
+  }
+
+  const series = columns.map((column, index) => {
+    const values = columnValues(table, column.id);
+    let result: any = null;
+    if (values.length >= 4) {
+      try {
+        result = designs.routOutliers(values, { q: 0.01 });
+      } catch {
+        result = null;
+      }
+    }
+    return { column, index, values, result };
+  });
+
+  const everything = series.flatMap((entry) => entry.values);
+  if (!everything.length) {
+    return <EmptyPlot width={style.width} height={style.height} message="Enter some numbers in the data table" />;
+  }
+  const pad = (Math.max(...everything) - Math.min(...everything)) * 0.08 || 1;
+  const yLow = style.yMin ?? Math.min(...everything) - pad;
+  const yHigh = style.yMax ?? Math.max(...everything) + pad;
+  const yScale = makeScale(yLow, yHigh, plotBottom, plotTop);
+  const ticks = niceTicks(yLow, yHigh);
+  const step = (plotRight - plotLeft) / series.length;
+
+  return (
+    <>
+      <Grid style={style} xTicks={[]} yTicks={ticks} xScale={makeScale(0, 1, plotLeft, plotRight)} yScale={yScale}
+        plotLeft={plotLeft} plotRight={plotRight} plotTop={plotTop} plotBottom={plotBottom} />
+      <YAxis {...props} ticks={ticks} yScale={yScale} />
+
+      {series.map((entry) => {
+        const centre = plotLeft + step * (entry.index + 0.5);
+        const width = Math.min(step * 0.55, 90);
+        const colour = colorFor(style, entry.column.id, entry.index);
+        const flagged = new Set<number>(entry.result ? entry.result.outliers.map((outlier: any) => outlier.index) : []);
+
+        return (
+          <g key={entry.column.id}>
+            {entry.result && (
+              <>
+                <rect x={centre - width / 2} y={yScale.toPixel(entry.result.centre + entry.result.robustScale)}
+                  width={width}
+                  height={Math.max(yScale.toPixel(entry.result.centre - entry.result.robustScale)
+                    - yScale.toPixel(entry.result.centre + entry.result.robustScale), 1)}
+                  fill={colour} fillOpacity={0.12} />
+                <line x1={centre - width / 2} x2={centre + width / 2}
+                  y1={yScale.toPixel(entry.result.centre)} y2={yScale.toPixel(entry.result.centre)}
+                  stroke={colour} strokeWidth={1.6} />
+              </>
+            )}
+            {entry.values.map((value, position) => {
+              const jitter = ((position * 2654435761) % 1000) / 1000 - 0.5;
+              const x = centre + jitter * width * 0.6;
+              const isOutlier = flagged.has(position);
+              return (
+                <Marker key={position} x={x} y={yScale.toPixel(value)}
+                  r={style.pointSize + (isOutlier ? 1.5 : 0)}
+                  shape={shapeFor(entry.index)}
+                  fill={isOutlier ? '#B4544A' : colour}
+                  fillOpacity={isOutlier ? 1 : 0.6}
+                  stroke={isOutlier ? '#7A2E27' : '#fff'} strokeWidth={isOutlier ? 1.6 : 0.7}
+                  onClick={() => onPickRow?.(findRowForValue(table, entry.index, position), entry.index)}>
+                  <title>{`${entry.column.name} · ${value}${isOutlier ? ' · flagged as an outlier' : ''}`}</title>
+                </Marker>
+              );
+            })}
+            <text x={centre} y={plotBottom + font + 4} textAnchor="middle" fontSize={font - 1} fill="#555">
+              {entry.column.name}
+            </text>
+          </g>
+        );
+      })}
     </>
   );
 }

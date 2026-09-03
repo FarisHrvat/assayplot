@@ -43,8 +43,19 @@ jobs:
           # 4.5 or later: the tied rank-test fixtures record the exact
           # conditional distribution R introduced in that version.
           r-version: release
-      - name: Install jsonlite
-        run: Rscript -e 'install.packages("jsonlite", repos = "https://cloud.r-project.org")'
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          # survival, nlme and MASS ship with R; the rest are the oracles for
+          # the mixed model, GEE and ANOSIM. reference.R guards each with
+          # requireNamespace, so a missing one drops cases rather than failing,
+          # which is exactly what must not happen here.
+          packages: |
+            any::jsonlite
+            any::geepack
+            any::vegan
+      - name: Every oracle must be present, or the drift check proves nothing
+        run: |
+          Rscript -e 'for (p in c("jsonlite","survival","nlme","geepack","vegan")) if (!requireNamespace(p, quietly=TRUE)) stop("missing R package: ", p)'
       - run: npm ci
       - name: Regenerate fixtures from R
         run: Rscript validation/generate/reference.R
