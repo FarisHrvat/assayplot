@@ -12,12 +12,8 @@ export interface SaveFilter {
 }
 
 /**
- * Writes a file where the user asks. In the browser this is a download to
- * wherever the browser puts downloads; in the app it opens a save dialog, so
- * an export can go into the folder the manuscript lives in rather than into
- * Downloads.
- *
- * Returns the path written, or null if the user cancelled.
+ * Writes a file where the user asks. Returns the path, or null if they
+ * cancelled. Falls back to a browser download outside the app.
  */
 export async function saveFile(
   suggestedName: string,
@@ -95,10 +91,7 @@ export async function downloadUpdate(update: Update): Promise<string> {
   return invoke<string>('download_update', { url: update.url, filename: update.filename });
 }
 
-/**
- * Hands the download to the platform. Resolves true when this process must get
- * out of the way — Windows, where the installer replaces the running build.
- */
+/** True when this process has to quit: Windows, where the installer replaces it. */
 export async function installUpdate(path: string): Promise<boolean> {
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<boolean>('install_update', { path });

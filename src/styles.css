@@ -1129,3 +1129,33 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 :root[data-density="compact"] { font-size: 14.5px; }
 :root[data-density="normal"] { font-size: 16px; }
 :root[data-density="roomy"] { font-size: 17.5px; }
+
+/* --------------------------------------------------------- context menu */
+
+.context-menu {
+  position: fixed;
+  z-index: 800;
+  padding: 5px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  box-shadow: 0 10px 34px var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.context-menu button {
+  border: none;
+  background: none;
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-radius: 5px;
+  font-size: 0.85rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+.context-menu button:hover { background: var(--accent-soft); }
+.context-menu button.danger { color: var(--flag-ink); }
+.context-menu button.danger:hover { background: var(--flag-soft); }
+.context-menu hr { margin: 4px 2px; border: none; border-top: 1px solid var(--rule); }

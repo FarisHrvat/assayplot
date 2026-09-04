@@ -170,6 +170,14 @@ export function migrate(raw: any): Project {
       columns: Math.max(1, Number(layout.columns) || 2),
       labelStyle: ['A', 'a', '1', 'none'].includes(layout.labelStyle) ? layout.labelStyle : 'A',
       gap: Number.isFinite(Number(layout.gap)) ? Number(layout.gap) : 18,
+      // Added in 0.7. A layout saved before free arrangement has none, and
+      // stays on the grid until someone drags a panel.
+      frames: Array.isArray(layout.frames)
+        ? layout.frames.map((frame: any) =>
+            frame && [frame.x, frame.y, frame.width, frame.height].every((value) => Number.isFinite(Number(value)))
+              ? { x: Number(frame.x), y: Number(frame.y), width: Number(frame.width), height: Number(frame.height) }
+              : null)
+        : undefined,
     })),
   };
 }

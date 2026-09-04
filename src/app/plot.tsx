@@ -25,6 +25,7 @@ import {
   type Figure,
   type FigureStyle,
   type PlotType,
+  type PanelFrame,
   type TableShape,
   columnValues,
   predictorCandidates,
@@ -67,14 +68,16 @@ export const shapeFor = (index: number): MarkerShape =>
   getSettings().colourBlindSafe ? SHAPES[index % SHAPES.length] : 'circle';
 
 /** One data point, drawn as whichever shape its series was given. */
-function Marker({ x, y, r, shape, fill, fillOpacity, stroke, strokeWidth, onClick, cursor, children }: {
+function Marker({ x, y, r, shape, fill, fillOpacity, stroke, strokeWidth, onClick, onContextMenu, cursor, children }: {
   x: number; y: number; r: number; shape: MarkerShape;
   fill: string; fillOpacity?: number; stroke?: string; strokeWidth?: number;
-  onClick?: (event: React.MouseEvent) => void; cursor?: string;
+  onClick?: (event: React.MouseEvent) => void;
+  onContextMenu?: (event: React.MouseEvent) => void;
+  cursor?: string;
   children?: React.ReactNode;
 }) {
   const common = {
-    fill, fillOpacity, stroke, strokeWidth, onClick,
+    fill, fillOpacity, stroke, strokeWidth, onClick, onContextMenu,
     style: cursor ? { cursor } : undefined,
   };
   if (shape === 'circle') return <circle cx={x} cy={y} r={r} {...common}>{children}</circle>;
@@ -115,6 +118,27 @@ export type Selected =
   | { kind: 'yLabel' }
   | { kind: 'series'; columnId: string; index: number }
   | null;
+
+/** How a singled-out point is recorded in the figure's style. */
+export const pointKey = (columnId: string, rowIndex: number) => `${columnId}:${rowIndex}`;
+
+/** What to write above a point, given the figure's label setting. */
+function pointLabelFor(style: FigureStyle, ringed: boolean, value: number, rowIndex: number): string | null {
+  if (style.pointLabels === 'none') return null;
+  if (style.pointLabels === 'highlighted' && !ringed) return null;
+  if (style.pointLabels === 'row') return String(rowIndex + 1);
+  return formatTick(Number(value.toPrecision(4)));
+}
+
+/** What a right-click landed on, and where the pointer was when it did. */
+export interface PlotContext {
+  x: number;
+  y: number;
+  target:
+    | { kind: 'point'; columnId: string; rowIndex: number; value: number }
+    | { kind: 'series'; columnId: string; index: number }
+    | { kind: 'canvas' };
+}
 
 /** Deterministic jitter: seeded from the mark's identity so it never moves. */
 function jitter(seed: number, spread: number): number {
@@ -247,6 +271,18 @@ export const PLOT_KINDS: PlotKind[] = [
 
 export const PLOT_GROUPS: PlotGroup[] = ['Compare groups', 'Distribution', 'X versus Y', 'Matrix', 'Parts of a whole', 'Survival', 'Agreement', 'Model', 'Multivariate'];
 
+/**
+ * Plot types that draw a legend. A grouped bar chart does not: the group names
+ * are already written along the axis, and repeating them is clutter.
+ */
+const LEGEND_PLOTS: PlotType[] = [
+  'scatter', 'line', 'area', 'step', 'bubble',
+  'histogram', 'density', 'ecdf', 'qq',
+  'pie', 'donut', 'survival',
+  'ancova', 'pcascore', 'plsscore', 'mrscatter',
+];
+export const hasLegend = (plotType: PlotType) => LEGEND_PLOTS.includes(plotType);
+
 export function plotsForShape(shape: TableShape): PlotKind[] {
   // A Grouped table plots like a Column table: its value columns are the series.
   const effective = shape === 'grouped' ? 'column' : shape;
@@ -268,12 +304,16 @@ export interface PlotProps {
   onSelect?: (selection: Selected) => void;
   /** Set while a text element is being edited in place. */
   editing?: Selected;
+  /** Right-click, with what it landed on. */
+  onContextMenu?: (context: PlotContext) => void;
+  /** Mouse-down on the legend, so the view can drag it. */
+  onGrabLegend?: (event: React.MouseEvent) => void;
   onEditText?: (value: string) => void;
   onFinishEdit?: () => void;
 }
 
 export function Plot(props: PlotProps) {
-  const { table, figure, result, onPickRow, highlightRow, selected, onSelect } = props;
+  const { table, figure, result, onPickRow, highlightRow, selected, onSelect, onContextMenu } = props;
   const style = figure.style;
   const plotType = figure.plotType;
   const width = style.width;
@@ -296,6 +336,8 @@ export function Plot(props: PlotProps) {
     atBottom: legendAtBottom,
     right: plotRight,
     left: plotLeft,
+    top: plotTop,
+    bottom: plotBottom,
     y: legendAtBottom ? height - 10 : plotTop - 16,
   };
 
@@ -314,6 +356,10 @@ export function Plot(props: PlotProps) {
       aria-label={style.title || figure.name}
       style={{ fontFamily: 'inherit' }}
       onClick={() => onSelect?.(null)}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onContextMenu?.({ x: event.clientX, y: event.clientY, target: { kind: 'canvas' } });
+      }}
     >
       <rect x={0} y={0} width={width} height={height} fill="#ffffff" />
       {children}
@@ -422,7 +468,7 @@ export function Plot(props: PlotProps) {
 
         {style.showLegend && series.length > 1 && (
           <Legend items={series.map((entry) => ({ label: entry.column.name, color: entry.color }))}
-            placement={legendPlacement} font={font} />
+            placement={legendPlacement} font={font} style={style} onGrab={props.onGrabLegend} />
         )}
       </>
     );
@@ -541,21 +587,45 @@ export function Plot(props: PlotProps) {
             {(style.showPoints || alwaysShowPoints) && values.map((value, valueIndex) => {
               const rowIndex = findRowForValue(table, index, valueIndex);
               const isHot = highlightRow !== null && highlightRow === rowIndex;
+              const key = pointKey(group.column.id, rowIndex);
+              const ringed = style.highlights.includes(key);
               const offset = plotType === 'swarm'
                 ? beeswarmOffset(values, valueIndex, yScale, style.pointSize)
                 : plotType === 'paired'
                   ? 0
                   : jitter(index * 977 + valueIndex * 31 + 7, bodyWidth * 0.55);
+              const x = center + offset;
+              const y = yScale.toPixel(value);
+              const label = pointLabelFor(style, ringed, value, rowIndex);
               return (
-                <Marker key={valueIndex} x={center + offset} y={yScale.toPixel(value)}
-                  r={isHot ? style.pointSize + 2 : style.pointSize}
-                  shape={shapeFor(index)}
-                  fill={isHot ? '#111' : color}
-                  fillOpacity={plotType === 'bar' ? 0.95 : 0.8}
-                  stroke="#fff" strokeWidth={0.9}
-                  onClick={(event) => { event.stopPropagation(); onPickRow?.(rowIndex, index); }}>
-                  <title>{`${group.column.name} · row ${rowIndex + 1} · ${value}`}</title>
-                </Marker>
+                <g key={valueIndex}>
+                  {/* Drawn under the mark, so the ring reads as around it. */}
+                  {ringed && (
+                    <circle cx={x} cy={y} r={style.pointSize + 3.5}
+                      fill="none" stroke="#111" strokeWidth={1.6} />
+                  )}
+                  <Marker x={x} y={y}
+                    r={isHot ? style.pointSize + 2 : style.pointSize}
+                    shape={shapeFor(index)}
+                    fill={isHot ? '#111' : color}
+                    fillOpacity={plotType === 'bar' ? 0.95 : 0.8}
+                    stroke="#fff" strokeWidth={0.9}
+                    onClick={(event) => { event.stopPropagation(); onPickRow?.(rowIndex, index); }}
+                    onContextMenu={(event: React.MouseEvent) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onContextMenu?.({
+                        x: event.clientX, y: event.clientY,
+                        target: { kind: 'point', columnId: group.column.id, rowIndex, value },
+                      });
+                    }}>
+                    <title>{`${group.column.name} · row ${rowIndex + 1} · ${value}`}</title>
+                  </Marker>
+                  {label && (
+                    <text x={x} y={y - style.pointSize - (ringed ? 6 : 3)} textAnchor="middle"
+                      fontSize={font - 3} fill="#333">{label}</text>
+                  )}
+                </g>
               );
             })}
           </g>
@@ -830,7 +900,7 @@ function DistributionPlot(props: any) {
 
   const legend = style.showLegend && series.length > 1
     ? <Legend items={series.map((entry) => ({ label: entry.column.name, color: entry.color }))}
-        placement={props.legendPlacement} font={font} />
+        placement={props.legendPlacement} font={font} style={style} onGrab={props.onGrabLegend} />
     : null;
   if (plotType === 'qq') {
     const points = series.flatMap((entry) => {
@@ -989,25 +1059,16 @@ export interface LayoutPanel {
  * own coordinate system and nothing has to be re-laid-out. The composite
  * serialises and rasterises through exactly the same path as a single figure.
  */
-export function LayoutFigure({
-  panels, columns, gap, labelStyle, labelFor,
-}: {
-  panels: LayoutPanel[];
-  columns: number;
-  gap: number;
-  labelStyle: string;
-  labelFor: (index: number) => string;
-}) {
-  if (!panels.length) {
-    return <EmptyPlot width={520} height={200} message="Add figures to this layout from the panel on the right" />;
-  }
-
+/**
+ * Where each panel sits when the layout is a grid. Also the starting point when
+ * someone drags one: a free layout begins as the grid it replaced, so nothing
+ * jumps the moment it stops being automatic.
+ */
+export function gridFrames(panels: LayoutPanel[], columns: number, gap: number, labelStyle: string) {
   const perRow = Math.max(1, columns);
   const rows = Math.ceil(panels.length / perRow);
   const labelRoom = labelStyle === 'none' ? 0 : 20;
 
-  // Column widths and row heights follow the largest panel in each, so panels
-  // stay aligned to a grid rather than overlapping.
   const columnWidths: number[] = [];
   const rowHeights: number[] = [];
   panels.forEach((panel, index) => {
@@ -1017,33 +1078,92 @@ export function LayoutFigure({
     rowHeights[row] = Math.max(rowHeights[row] ?? 0, panel.figure.style.height + labelRoom);
   });
 
-  const totalWidth = columnWidths.reduce((sum, width) => sum + width, 0) + gap * (perRow - 1);
-  const totalHeight = rowHeights.reduce((sum, height) => sum + height, 0) + gap * (rows - 1);
-
   const offsetX = (column: number) =>
     columnWidths.slice(0, column).reduce((sum, width) => sum + width + gap, 0);
   const offsetY = (row: number) =>
     rowHeights.slice(0, row).reduce((sum, height) => sum + height + gap, 0);
 
+  return {
+    labelRoom,
+    totalWidth: columnWidths.reduce((sum, width) => sum + width, 0) + gap * (perRow - 1),
+    totalHeight: rowHeights.reduce((sum, height) => sum + height, 0) + gap * (rows - 1),
+    frames: panels.map((panel, index) => ({
+      x: offsetX(index % perRow),
+      y: offsetY(Math.floor(index / perRow)),
+      width: panel.figure.style.width,
+      height: panel.figure.style.height + labelRoom,
+    })),
+  };
+}
+
+export function LayoutFigure({
+  panels, columns, gap, labelStyle, labelFor, frames, selected, onSelect, onGrab,
+}: {
+  panels: LayoutPanel[];
+  columns: number;
+  gap: number;
+  labelStyle: string;
+  labelFor: (index: number) => string;
+  /** Explicit placement per panel. Any entry set makes the whole layout free. */
+  frames?: (PanelFrame | null)[];
+  selected?: number | null;
+  onSelect?: (index: number | null) => void;
+  /** Called when a drag starts on a panel body or one of its corners. */
+  onGrab?: (index: number, mode: 'move' | 'resize', event: React.MouseEvent) => void;
+}) {
+  if (!panels.length) {
+    return <EmptyPlot width={520} height={200} message="Add figures to this layout from the panel on the right" />;
+  }
+
+  const grid = gridFrames(panels, columns, gap, labelStyle);
+  const labelRoom = grid.labelRoom;
+  const placed = panels.map((_, index) => frames?.[index] ?? grid.frames[index]);
+
+  // A free layout is as big as whatever it holds; a grid is as big as its grid.
+  const totalWidth = Math.max(grid.totalWidth, ...placed.map((frame) => frame.x + frame.width));
+  const totalHeight = Math.max(grid.totalHeight, ...placed.map((frame) => frame.y + frame.height));
+  const editable = Boolean(onGrab);
+
   return (
     <svg viewBox={`0 0 ${totalWidth} ${totalHeight}`} width={totalWidth} height={totalHeight}
-      role="img" aria-label="Multi-panel figure" style={{ fontFamily: 'inherit' }}>
+      role="img" aria-label="Multi-panel figure" style={{ fontFamily: 'inherit' }}
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onSelect?.(null); }}>
       <rect x={0} y={0} width={totalWidth} height={totalHeight} fill="#ffffff" />
       {panels.map((panel, index) => {
-        const column = index % perRow;
-        const row = Math.floor(index / perRow);
-        const x = offsetX(column);
-        const y = offsetY(row);
+        const frame = placed[index];
+        const { x, y } = frame;
         const label = labelFor(index);
+        // The panel keeps its aspect: a frame scales the figure inside it
+        // rather than cropping it, so making one panel large enlarges the
+        // whole picture and not just its box.
+        const inner = Math.max(frame.height - labelRoom, 1);
         return (
           <g key={`${panel.figure.id}-${index}`} transform={`translate(${x} ${y})`}>
             {label && (
               <text x={0} y={14} fontSize={17} fontWeight={700} fill="#111">{label}</text>
             )}
-            <svg x={0} y={labelRoom} width={panel.figure.style.width} height={panel.figure.style.height}
-              viewBox={`0 0 ${panel.figure.style.width} ${panel.figure.style.height}`}>
+            <svg x={0} y={labelRoom} width={frame.width} height={inner}
+              viewBox={`0 0 ${panel.figure.style.width} ${panel.figure.style.height}`}
+              preserveAspectRatio="xMidYMid meet">
               <Plot table={panel.table} figure={panel.figure} result={panel.result} />
             </svg>
+            {editable && (
+              <>
+                <rect x={0} y={0} width={frame.width} height={frame.height}
+                  fill="transparent" style={{ cursor: 'move' }}
+                  data-placeholder="panel-hit"
+                  onMouseDown={(event) => { onSelect?.(index); onGrab?.(index, 'move', event); }} />
+                <rect x={0} y={0} width={frame.width} height={frame.height}
+                  fill="none" data-placeholder="panel-outline"
+                  stroke={selected === index ? '#0C6259' : '#D6DEDC'}
+                  strokeWidth={selected === index ? 1.6 : 1}
+                  strokeDasharray={selected === index ? 'none' : '4 4'} />
+                <rect x={frame.width - 9} y={frame.height - 9} width={9} height={9}
+                  fill={selected === index ? '#0C6259' : '#B9C4C1'}
+                  data-placeholder="panel-grip" style={{ cursor: 'nwse-resize' }}
+                  onMouseDown={(event) => { onSelect?.(index); onGrab?.(index, 'resize', event); }} />
+              </>
+            )}
           </g>
         );
       })}
@@ -1313,7 +1433,7 @@ function SurvivalPlot(props: any) {
 
       {style.showLegend && groups.length > 1 && (
         <Legend items={groups.map((group) => ({ label: group.name, color: group.color }))}
-          placement={props.legendPlacement} font={font} />
+          placement={props.legendPlacement} font={font} style={style} onGrab={props.onGrabLegend} />
       )}
     </>
   );
@@ -1467,7 +1587,8 @@ function PiePlot(props: any) {
       {wedges}
       {style.showLegend && (
         <Legend items={slices.map((slice) => ({ label: slice.column.name, color: slice.color }))}
-          placement={{ ...props.legendPlacement, atBottom: true, y: plotBottom + 30 }} font={font} />
+          placement={{ ...props.legendPlacement, atBottom: true, y: plotBottom + 30 }} font={font}
+          style={style} onGrab={props.onGrabLegend} />
       )}
     </>
   );
@@ -1529,18 +1650,56 @@ function SignificanceBrackets({ comparisons, centerOf, groups, errorFor, yScale,
  * Right-aligned beside the title when it fits there, otherwise centred on its
  * own row beneath the plot. Either way it never overlaps the title.
  */
-function Legend({ items, placement, font }: any) {
-  const slot = Math.min(104, Math.max(64, (placement.right - placement.left) / items.length));
+/**
+ * The legend, laid out automatically unless someone has dragged it. A dragged
+ * legend stacks vertically: it has been moved because the automatic row was in
+ * the way, and a row is what was in the way.
+ */
+function Legend({ items, placement, font, style, onGrab }: any) {
+  const scale = style?.legendScale ?? 1;
+  const size = (font - 1) * scale;
+  const at = style?.legendAt ?? null;
+
+  if (at) {
+    const x = placement.left + at.x * (placement.right - placement.left);
+    const y = placement.top + at.y * (placement.bottom - placement.top);
+    const step = size * 1.5;
+    const width = Math.max(...items.map((item: any) => item.label.length)) * size * 0.58 + 22 * scale;
+
+    return (
+      <g transform={`translate(${x} ${y})`}>
+        {onGrab && (
+          <rect x={-6} y={-step * 0.85} width={width} height={step * items.length + 6}
+            fill="transparent" data-placeholder="legend-hit"
+            style={{ cursor: 'move' }} onMouseDown={onGrab} />
+        )}
+        {items.map((item: any, index: number) => (
+          <g key={item.label} transform={`translate(0 ${index * step})`}>
+            <Marker x={5 * scale} y={-size * 0.3} r={4 * scale}
+              shape={shapeFor(item.shapeIndex ?? index)} fill={item.color} />
+            <text x={15 * scale} y={0} fontSize={size} fill="#444">{item.label}</text>
+          </g>
+        ))}
+      </g>
+    );
+  }
+
+  const slot = Math.min(104, Math.max(64, (placement.right - placement.left) / items.length)) * scale;
   const total = items.length * slot;
   const start = placement.atBottom
     ? (placement.left + placement.right) / 2 - total / 2
     : placement.right - total;
   return (
     <g>
+      {onGrab && (
+        <rect x={start - 6} y={placement.y - size} width={total + 12} height={size * 1.8}
+          fill="transparent" data-placeholder="legend-hit"
+          style={{ cursor: 'move' }} onMouseDown={onGrab} />
+      )}
       {items.map((item: any, index: number) => (
         <g key={item.label} transform={`translate(${start + index * slot} ${placement.y})`}>
-          <Marker x={5} y={-4} r={4} shape={shapeFor(item.shapeIndex ?? index)} fill={item.color} />
-          <text x={15} y={0} fontSize={font - 1} fill="#444">{item.label}</text>
+          <Marker x={5 * scale} y={-4 * scale} r={4 * scale} shape={shapeFor(item.shapeIndex ?? index)} fill={item.color} />
+          <text x={15 * scale} y={0} fontSize={size} fill="#444">{item.label}</text>
         </g>
       ))}
     </g>
@@ -1779,7 +1938,7 @@ function AncovaPlot(props: any) {
       })}
 
       {style.showLegend && (
-        <Legend placement={legendPlacement} font={props.font}
+        <Legend placement={legendPlacement} font={props.font} style={style} onGrab={props.onGrabLegend}
           items={groups.map((group, index) => ({
             label: group.column.name,
             color: colorFor(style, group.column.id, group.index),
@@ -2077,7 +2236,7 @@ function PcaPlot(props: any) {
       })}
 
       {style.showLegend && data.groups && (
-        <Legend placement={legendPlacement} font={font}
+        <Legend placement={legendPlacement} font={font} style={style} onGrab={props.onGrabLegend}
           items={groups.map((name, index) => ({ label: name, color: colorFor(style, name, index), shapeIndex: index }))} />
       )}
     </>
@@ -2284,7 +2443,7 @@ function PlsPlot(props: any) {
       </text>
 
       {style.showLegend && (
-        <Legend placement={legendPlacement} font={font}
+        <Legend placement={legendPlacement} font={font} style={style} onGrab={props.onGrabLegend}
           items={classes.map((name, index) => ({ label: name, color: colorFor(style, name, index), shapeIndex: index }))} />
       )}
     </>
@@ -2468,7 +2627,7 @@ function MendelianPlot(props: any) {
       ))}
 
       {style.showLegend && (
-        <Legend placement={legendPlacement} font={font}
+        <Legend placement={legendPlacement} font={font} style={style} onGrab={props.onGrabLegend}
           items={lines.map((line, index) => ({ label: line.label, color: colorFor(style, line.label, index), shapeIndex: index }))} />
       )}
     </>

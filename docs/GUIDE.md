@@ -197,6 +197,18 @@ width, histogram bins, legend, and the exact pixel size of the figure.
 **Error bars** default to standard deviation. Choose SD, SEM, 95% CI, or
 min-to-max — and state which one in your caption. The panel reminds you.
 
+**Right-click** anything on a figure. On a point you get: ring it, jump to its
+row in the data, or label it. Elsewhere you get the gridlines, legend, points
+and box toggles, plus copy and export.
+
+**Ringing a point** is how you say "this is the one" — the clone that behaved,
+the animal that did not. Ringed points can be labelled on their own, leaving
+the rest clean.
+
+**The legend** can be dragged where you want it and scaled in the panel. A
+dragged legend stacks vertically, because a legend gets moved when the row
+across the top was in the way. "Put the legend back" undoes it.
+
 **Significance brackets** appear when you point the figure's *Significance from*
 at an analysis. They stack without colliding and use the adjusted p-values.
 
@@ -208,6 +220,14 @@ starts one with the figures you already have.
 Set panels per row, labelling (A/a/1/none), and the gap. Reorder with the arrows.
 Panels reference figures rather than copying them, so editing a figure updates
 every layout it appears in.
+
+**Drag a panel** to put it where you want, or drag its bottom-right corner to
+resize it. One large panel with four small ones beside it is a drag away. The
+first drag turns the layout free-form, starting from wherever the grid had
+already put everything, so nothing jumps. *Back to the grid* undoes the lot.
+
+Resizing scales the figure inside the panel rather than cropping it, so a
+bigger panel is a bigger picture and not a wider box around the same one.
 
 ## Exporting
 

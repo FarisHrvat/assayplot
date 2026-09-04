@@ -165,9 +165,8 @@ export interface AnalysisOptions {
 }
 
 /**
- * A deterministic generator, seeded from the data itself. Permutation tests
- * must give the same answer twice: a figure that changes when you reopen the
- * project is not a result anyone can publish.
+ * Seeded from the data, so a permutation test gives the same answer twice. A
+ * figure that changes when you reopen the project is not publishable.
  */
 export function seededRandom(seed: number) {
   let state = (seed >>> 0) || 0x2f6e2b1;
@@ -238,6 +237,18 @@ export interface FigureStyle {
   barWidth: number;
   /** Histogram / density resolution. */
   bins: number;
+  /**
+   * Points singled out, as "columnId:rowIndex". A ringed point is how you say
+   * "this is the one" about a replicate that matters — the clone that behaved,
+   * the animal that did not.
+   */
+  highlights: string[];
+  /** What to write above each point, if anything. */
+  pointLabels: 'none' | 'value' | 'row' | 'highlighted';
+  /** Where the legend sits, as a fraction of the plot area. Null follows the layout. */
+  legendAt: { x: number; y: number } | null;
+  /** Legend text size relative to the rest of the figure. */
+  legendScale: number;
 }
 
 export interface Figure {
@@ -262,6 +273,19 @@ export interface Layout {
   labelStyle: PanelLabelStyle;
   /** Gap between panels, in the same units as figure width. */
   gap: number;
+  /**
+   * Explicit placement per panel, parallel to `panels` by index. Absent means
+   * the panel follows the grid; present means someone dragged it, and a
+   * layout with any placement stops being a grid entirely.
+   */
+  frames?: (PanelFrame | null)[];
+}
+
+export interface PanelFrame {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface Project {
@@ -275,9 +299,8 @@ export interface Project {
 }
 
 export const SCHEMA_VERSION = 5;
-// Injected from package.json at build time. Node's test runner does not run
-// through Vite, so the fallback keeps the suite working; it is never what a
-// build ships.
+// From package.json at build time. The fallback is for the test runner, which
+// does not go through Vite.
 declare const __APP_VERSION__: string;
 export const APP_VERSION =
   typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.0.0-dev';
@@ -573,11 +596,7 @@ export interface AnalysisResult {
   error: string | null;
 }
 
-/**
- * Display precision. Set from the preferences rather than imported from them,
- * so this module stays free of the interface and the analyses stay pure
- * functions of their inputs — only the rendering of a number changes.
- */
+/** Display precision, pushed in from preferences so this module imports no UI. */
 const display = { decimals: 4, exactPValues: false, figureWidth: 520, figureHeight: 380, palette: 'assayplot' };
 
 export function setDisplayPreferences(next: Partial<typeof display>): void {
@@ -1878,10 +1897,8 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
         const responses = pairs.map((pair) => pair.y);
         const raw: any = nonlinear.fitDoseResponse(concentrations, responses);
 
-        // The three-parameter model is the same curve with the Hill slope
-        // pinned at 1. Comparing them answers whether the data actually
-        // supported estimating a slope, which a four-parameter fit alone
-        // never asks.
+        // Same curve with the Hill slope pinned at 1. Comparing the two
+        // says whether the data supported estimating a slope at all.
         let comparison: any = null;
         if (raw.residualDf >= 1 && pairs.length >= 5) {
           try {
@@ -2318,6 +2335,10 @@ export function defaultStyle(overrides: Partial<FigureStyle> = {}): FigureStyle 
     fontSize: 13,
     barWidth: 0.55,
     bins: 12,
+    highlights: [],
+    pointLabels: 'none',
+    legendAt: null,
+    legendScale: 1,
     ...overrides,
   };
 }

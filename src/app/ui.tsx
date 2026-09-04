@@ -45,8 +45,8 @@ import {
 } from './notion.ts';
 import { clearSnapshot, readSnapshot, type Snapshot } from './persist.ts';
 import {
-  LayoutFigure, Plot, PALETTES, PLOT_GROUPS, PLOT_KINDS,
-  paletteFor, plotsForShape, type LayoutPanel, type Selected,
+  LayoutFigure, Plot, PALETTES, PLOT_GROUPS, PLOT_KINDS, gridFrames, hasLegend, pointKey,
+  paletteFor, plotsForShape, type LayoutPanel, type PlotContext, type Selected,
 } from './plot.tsx';
 import {
   IMPORT_EXTENSIONS,
@@ -420,6 +420,12 @@ function UpdateDialog({ update, onClose }: { update: Update; onClose: (skip: boo
 
 const SKIPPED_KEY = 'assayplot.update.skipped';
 
+/**
+ * The AGPL asks that a program offer users a way to get its source. Putting the
+ * link in Preferences is the least it can be.
+ */
+const SOURCE_URL = 'https://github.com/FarisHrvat/assayplot';
+
 /** Checks once per launch, a moment after the interface settles. */
 function useUpdateCheck(enabled: boolean) {
   const [update, setUpdate] = useState<Update | null>(null);
@@ -451,6 +457,50 @@ function useUpdateCheck(enabled: boolean) {
   };
 
   return [update, dismiss] as const;
+}
+
+/**
+ * A right-click menu on the figure. Everything here is reachable from the
+ * panel on the right as well: this is a shortcut to the thing under the
+ * pointer, not the only way to get at it.
+ */
+function ContextMenu({ at, items, onClose }: {
+  at: { x: number; y: number };
+  items: ({ label: string; run: () => void; danger?: boolean } | 'divider')[];
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const dismiss = () => onClose();
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    // Capture, so a click anywhere closes it before that click does its own job.
+    window.addEventListener('mousedown', dismiss, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', dismiss, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  // Kept on screen: near the right or bottom edge it opens the other way.
+  const width = 232;
+  const height = items.length * 30 + 12;
+  const x = Math.min(at.x, window.innerWidth - width - 8);
+  const y = Math.min(at.y, window.innerHeight - height - 8);
+
+  return (
+    <div className="context-menu" role="menu" style={{ left: x, top: y, width }}
+      onMouseDown={(event) => event.stopPropagation()}>
+      {items.map((item, index) =>
+        item === 'divider'
+          ? <hr key={`divider-${index}`} />
+          : (
+            <button key={item.label} role="menuitem" className={item.danger ? 'danger' : ''}
+              onClick={() => { item.run(); onClose(); }}>
+              {item.label}
+            </button>
+          ))}
+    </div>
+  );
 }
 
 function QuestionDialog({ question, onAnswer }: { question: Question; onAnswer: (choice: string | null) => void }) {
@@ -1290,7 +1340,13 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
               data is sent.
             </Hint>
 
-            <p className="settings-version">AssayPlot {APP_VERSION}</p>
+            <p className="settings-version">
+              AssayPlot {APP_VERSION} · Copyright © 2026 Faris Hrvat<br />
+              Free software under the AGPL-3.0-or-later.{' '}
+              <a href={SOURCE_URL} onClick={(event) => { event.preventDefault(); openExternal(SOURCE_URL); }}>
+                Source code
+              </a>
+            </p>
           </div>
         )}
 
@@ -2347,6 +2403,7 @@ function FigureView({ id }: { id: string }) {
   // reads the current value rather than taking it as a prop.
   useSettings();
   const [traced, setTraced] = useState<number | null>(null);
+  const [menu, setMenu] = useState<PlotContext | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [selected, setSelected] = useState<Selected>(null);
   const [editing, setEditing] = useState<Selected>(null);
@@ -2374,6 +2431,98 @@ function FigureView({ id }: { id: string }) {
   };
 
 
+
+  /** Drags the legend, in fractions of the plot area so it survives a resize. */
+  const grabLegend = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const svg = svgRef.current?.querySelector('svg') as SVGSVGElement | null;
+    if (!svg) return;
+
+    const box = svg.getBoundingClientRect();
+    const start = figure.style.legendAt ?? { x: 0.72, y: 0.08 };
+    const origin = { x: event.clientX, y: event.clientY };
+
+    const onMove = (move: MouseEvent) => {
+      const x = start.x + (move.clientX - origin.x) / Math.max(box.width, 1);
+      const y = start.y + (move.clientY - origin.y) / Math.max(box.height, 1);
+      updateStyle(figure.id, {
+        legendAt: { x: Math.min(1.1, Math.max(-0.1, x)), y: Math.min(1.1, Math.max(-0.1, y)) },
+      });
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  /** What the right-click menu offers, given what it landed on. */
+  const menuItems = (context: PlotContext) => {
+    const style = figure.style;
+    const items: ({ label: string; run: () => void; danger?: boolean } | 'divider')[] = [];
+
+    if (context.target.kind === 'point') {
+      const { columnId, rowIndex, value } = context.target;
+      const key = pointKey(columnId, rowIndex);
+      const ringed = style.highlights.includes(key);
+      items.push(
+        {
+          label: ringed ? 'Remove the ring from this point' : 'Ring this point',
+          run: () => updateStyle(figure.id, {
+            highlights: ringed
+              ? style.highlights.filter((entry) => entry !== key)
+              : [...style.highlights, key],
+          }),
+        },
+        { label: `Go to row ${rowIndex + 1} in the data`, run: () => traceRow(rowIndex) },
+        'divider',
+        {
+          label: style.pointLabels === 'none' ? 'Label every point with its value' : 'Stop labelling points',
+          run: () => updateStyle(figure.id, { pointLabels: style.pointLabels === 'none' ? 'value' : 'none' }),
+        },
+        {
+          label: 'Label only the ringed points',
+          run: () => updateStyle(figure.id, { pointLabels: 'highlighted' }),
+        },
+      );
+      if (style.highlights.length) {
+        items.push('divider', {
+          label: `Clear all ${style.highlights.length} rings`,
+          run: () => updateStyle(figure.id, { highlights: [] }),
+          danger: true,
+        });
+      }
+      void value;
+      return items;
+    }
+
+    if (hasLegend(figure.plotType)) {
+      items.push({
+        label: style.showLegend ? 'Hide the legend' : 'Show the legend',
+        run: () => updateStyle(figure.id, { showLegend: !style.showLegend }),
+      });
+    }
+    items.push(
+      { label: style.showPoints ? 'Hide individual points' : 'Show individual points',
+        run: () => updateStyle(figure.id, { showPoints: !style.showPoints }) },
+      { label: style.grid === 'none' ? 'Show gridlines' : 'Hide gridlines',
+        run: () => updateStyle(figure.id, { grid: style.grid === 'none' ? 'horizontal' : 'none' }) },
+      { label: style.frame ? 'Remove the box around the plot' : 'Box the plot area',
+        run: () => updateStyle(figure.id, { frame: !style.frame }) },
+      'divider',
+      { label: 'Copy this figure', run: () => { copyFigures([figure.id]); notify('Copied. Paste it into a layout.'); } },
+      { label: 'Export…', run: () => setExportOpen(true) },
+    );
+    if (style.legendAt) {
+      items.push('divider', {
+        label: 'Put the legend back where it was',
+        run: () => updateStyle(figure.id, { legendAt: null }),
+      });
+    }
+    return items;
+  };
 
   const traceRow = useCallback((rowIndex: number) => {
     setTraced((current) => (current === rowIndex ? null : rowIndex));
@@ -2427,6 +2576,7 @@ function FigureView({ id }: { id: string }) {
             <Plot table={table} figure={figure} result={result}
               onPickRow={traceRow} highlightRow={traced}
               selected={selected} onSelect={onSelect}
+              onContextMenu={setMenu} onGrabLegend={grabLegend}
               editing={editing} onEditText={onEditText} onFinishEdit={() => setEditing(null)} />
             <ResizeHandle
               width={figure.style.width}
@@ -2434,6 +2584,9 @@ function FigureView({ id }: { id: string }) {
               onResize={(width, height) => updateStyle(figure.id, { width, height })}
             />
           </div>
+          {menu && (
+            <ContextMenu at={menu} items={menuItems(menu)} onClose={() => setMenu(null)} />
+          )}
           <p className="trace">
             {traced !== null ? (
               <>
@@ -2613,11 +2766,48 @@ function FigureView({ id }: { id: string }) {
                 onChange={(event) => updateStyle(figure.id, { showSignificance: event.target.checked })} />
               Show significance brackets
             </label>
-            <label className="check">
-              <input type="checkbox" checked={figure.style.showLegend}
-                onChange={(event) => updateStyle(figure.id, { showLegend: event.target.checked })} />
-              Show legend
-            </label>
+            {hasLegend(figure.plotType) && (
+              <label className="check">
+                <input type="checkbox" checked={figure.style.showLegend}
+                  onChange={(event) => updateStyle(figure.id, { showLegend: event.target.checked })} />
+                Show legend
+              </label>
+            )}
+            {hasLegend(figure.plotType) && figure.style.showLegend && (
+              <>
+                <Field label="Legend size" hint={
+                  <>Drag the legend itself to move it. A moved legend stacks vertically,
+                  because a legend gets moved when the row across the top was in the way.</>
+                }>
+                  <input type="range" min={0.6} max={1.8} step={0.05}
+                    value={figure.style.legendScale}
+                    onChange={(event) => updateStyle(figure.id, { legendScale: Number(event.target.value) })} />
+                </Field>
+                {figure.style.legendAt && (
+                  <button onClick={() => updateStyle(figure.id, { legendAt: null })}>
+                    Put the legend back
+                  </button>
+                )}
+              </>
+            )}
+            <Field label="Label points with" hint={
+              <>Right-click a point to ring it. A ring is how you say "this is the one"
+              about a replicate that matters.</>
+            }>
+              <select value={figure.style.pointLabels}
+                onChange={(event) => updateStyle(figure.id, { pointLabels: event.target.value as any })}>
+                <option value="none">Nothing</option>
+                <option value="value">Their value</option>
+                <option value="row">Their row number</option>
+                <option value="highlighted">Only the ringed ones</option>
+              </select>
+            </Field>
+            {figure.style.highlights.length > 0 && (
+              <button onClick={() => updateStyle(figure.id, { highlights: [] })}>
+                Clear {figure.style.highlights.length} ringed point
+                {figure.style.highlights.length === 1 ? '' : 's'}
+              </button>
+            )}
           </div>
 
           <div className="prop-group">
@@ -2668,6 +2858,7 @@ function LayoutView({ id }: { id: string }) {
   const [exportOpen, setExportOpen] = useState(false);
   const clipboard = useStore((s) => s.clipboard);
   const pasteIntoLayout = useStore((s) => s.pasteIntoLayout);
+  const [selectedPanel, setSelectedPanel] = useState<number | null>(null);
 
   const paste = () => {
     if (!layout) return;
@@ -2706,6 +2897,53 @@ function LayoutView({ id }: { id: string }) {
 
 
 
+  /**
+   * Dragging a panel turns the layout free-form, starting from wherever the
+   * grid had already put everything: nothing jumps at the moment it stops
+   * being automatic.
+   */
+  const grabPanel = (index: number, mode: 'move' | 'resize', event: React.MouseEvent) => {
+    if (!layout) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const svg = svgRef.current?.querySelector('svg') as SVGSVGElement | null;
+    if (!svg) return;
+    // The figure is drawn at its own scale and displayed at another; a drag of
+    // one screen pixel has to move the panel by one figure unit, not one pixel.
+    const box = svg.getBoundingClientRect();
+    const viewWidth = svg.viewBox.baseVal.width || box.width;
+    const scale = box.width ? viewWidth / box.width : 1;
+
+    const start = gridFrames(panels, layout.columns, layout.gap, layout.labelStyle).frames;
+    const current = panels.map((_, at) => layout.frames?.[at] ?? start[at]);
+    const origin = { x: event.clientX, y: event.clientY };
+    const from = { ...current[index] };
+
+    const onMove = (move: MouseEvent) => {
+      const dx = (move.clientX - origin.x) * scale;
+      const dy = (move.clientY - origin.y) * scale;
+      const next = current.map((frame, at) => {
+        if (at !== index) return frame;
+        return mode === 'move'
+          ? { ...from, x: Math.max(0, Math.round(from.x + dx)), y: Math.max(0, Math.round(from.y + dy)) }
+          : {
+              ...from,
+              width: Math.max(80, Math.round(from.width + dx)),
+              height: Math.max(60, Math.round(from.height + dy)),
+            };
+      });
+      updateLayout(layout.id, { frames: next });
+    };
+
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
   const unused = project.figures.filter((figure) => !layout.panels.includes(figure.id));
 
   return (
@@ -2732,20 +2970,36 @@ function LayoutView({ id }: { id: string }) {
           <div className="canvas layout-canvas" ref={svgRef}>
             <LayoutFigure panels={panels} columns={layout.columns} gap={layout.gap}
               labelStyle={layout.labelStyle}
-              labelFor={(index) => panelLabel(layout.labelStyle, index)} />
+              labelFor={(index) => panelLabel(layout.labelStyle, index)}
+              frames={layout.frames}
+              selected={selectedPanel}
+              onSelect={setSelectedPanel}
+              onGrab={grabPanel} />
           </div>
           <p className="trace muted">
-            Panels use each figure as it stands. Edit a figure to change its panel.
+            {layout.frames?.some(Boolean)
+              ? 'Drag a panel to move it, or its corner to resize. Panels use each figure as it stands.'
+              : 'Drag a panel to place it freely, or its corner to resize. Until then it follows the grid.'}
           </p>
         </div>
 
         <aside className="properties">
           <div className="prop-group">
             <h3>Arrangement</h3>
-            <Field label="Panels per row">
+            <Field label="Panels per row" hint={
+              <>Ignored once you drag a panel: the layout is then whatever you
+              arranged, and "Back to the grid" is how you get this back.</>
+            }>
               <input type="number" min={1} max={6} value={layout.columns}
                 onChange={(event) => updateLayout(layout.id, { columns: Math.max(1, Number(event.target.value) || 1) })} />
             </Field>
+            {layout.frames?.some(Boolean) && (
+              <button onClick={() => {
+                updateLayout(layout.id, { frames: undefined });
+                setSelectedPanel(null);
+                notify('Panels are back on the grid.');
+              }}>Back to the grid</button>
+            )}
             <Field label="Panel labels">
               <select value={layout.labelStyle}
                 onChange={(event) => updateLayout(layout.id, { labelStyle: event.target.value as any })}>

@@ -59,10 +59,7 @@ export interface Problem {
   fix?: string[];
 }
 
-/**
- * A question put to the user, with the choices spelled out on the buttons.
- * "Close without saving" says what will happen; "OK" does not.
- */
+/** A question, with the consequence written on each button rather than "OK". */
 export interface Question {
   id: string;
   title: string;
@@ -85,11 +82,7 @@ interface State {
   toast: string | null;
   /** Something that did not work. Stays until dismissed. */
   problem: Problem | null;
-  /**
-   * A question waiting on an answer. The webview blocks window.confirm, so a
-   * native confirm() silently returns false and the button it guards appears
-   * to do nothing. Every question goes through here instead.
-   */
+  /** A question waiting on an answer. The webview blocks window.confirm. */
   question: Question | null;
   /** Shown over everything while something slow runs, with what it is doing. */
   working: string | null;
@@ -447,9 +440,8 @@ export const useStore = create<State>((set, get) => ({
     const project = get().project;
     const current = project.analyses.find((analysis) => analysis.id === id);
 
-    // Column choices are ids from the old table, and a method may not run on
-    // the new one's shape. Both are cleared rather than left pointing at
-    // something that no longer exists.
+    // Column ids belong to the old table, and the method may not fit the new
+    // shape. Drop both rather than leave them dangling.
     let effective = patch;
     if (current && patch.tableId && patch.tableId !== current.tableId) {
       const next = project.tables.find((table) => table.id === patch.tableId);
@@ -609,12 +601,9 @@ let lastWrite = 0;
 let pending: ReturnType<typeof setTimeout> | null = null;
 
 /**
- * Throttled rather than debounced: a debounce at a fifteen-minute setting
- * would write nothing until fifteen minutes after someone stopped typing,
- * which is the opposite of what "autosave every fifteen minutes" promises.
- * The first change after an interval writes at once; anything during it is
- * held and written when the interval is up. A closing window flushes either
- * way, so nothing is lost to the wait.
+ * Throttled, not debounced. A debounce at fifteen minutes writes nothing until
+ * fifteen minutes after the last keystroke, which is not what the setting says.
+ * Closing the window flushes regardless.
  */
 function persist(project: Project, dirty: boolean) {
   const interval = Math.max(800, getSettings().autosaveMinutes * 60_000);
