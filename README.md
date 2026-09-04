@@ -10,7 +10,7 @@ your data never leaves the computer.
 
 ## Status
 
-v0.4.0, a testable alpha. The whole workflow works: get your data in, run a
+v0.5.0, a testable alpha. The whole workflow works: get your data in, run a
 test, build a figure, assemble a panel, export it, save the project, open it
 again next week.
 
