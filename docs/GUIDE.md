@@ -199,18 +199,35 @@ every layout it appears in.
 
 ## Exporting
 
+Every export asks where to put it, so a figure can go straight into the folder
+the manuscript lives in.
+
 | Format | Use |
 |---|---|
 | **SVG** | Journals and Illustrator. Text stays editable; nothing is rasterised. |
-| **PNG 300 dpi** | Slides, posters, most journal raster requirements. |
-| **PNG 600 dpi** | Journals asking for high-resolution line art. |
+| **PNG** | Slides, posters, most journal raster requirements. Choose the DPI. |
+| **PDF** | A figure on a page, at a page size you pick or trimmed to the figure. |
 | **CSV** | The table itself, from the data view. |
 
-Set the figure's width and height in the panel before exporting; PNG scales from
-those at the DPI you choose.
+Set the figure's width and height in the panel before exporting; PNG and PDF
+scale from those at the DPI you choose. The starting DPI comes from Preferences.
 
 Unset axis labels show a grey placeholder in the editor as a hint. It is not part
 of the figure and never appears in an export.
+
+### The report
+
+**Report** writes up every analysis: the result, the methods sentence, and a
+SHA-256 of each data table beside the analyses that used it, so a reviewer can
+confirm the numbers analysed were the numbers supplied. Three formats:
+
+- **PDF** for a supplement or an email. The text is laid out rather than
+  rasterised, so it stays selectable and searchable.
+- **Web page**, one self-contained file that opens in any browser.
+- **Markdown**, to paste into Notion, a wiki or a doc.
+
+**Notion** sends the same report to a page in your own workspace, using an
+integration you create and a token stored on this machine.
 
 ## Saving and recovering work
 
@@ -218,9 +235,47 @@ of the figure and never appears in an export.
 and layouts. It is an ordinary ZIP of readable JSON — you can unzip it and read
 your numbers without AssayPlot installed.
 
-Work is also autosaved a moment after every change. If the app crashes or the tab
-closes, the next start offers to restore it. Saving to a file clears the
-recovery copy. Autosave is a safety net, not a substitute for saving.
+Work is also autosaved inside the application. If it crashes or the window
+closes, the next start offers to restore it, and a closing window always writes
+first whatever the interval is set to. Saving to a file clears the recovery
+copy. Autosave is a safety net, not a substitute for saving: it is the copy you
+cannot move, back up or send to anyone.
+
+Closing a table asks first, and says what closes with it — an analysis or a
+figure built on that table cannot outlive it. Undo brings the whole lot back.
+
+**New** opens a second window. Two projects side by side is the usual reason to
+want one, and closing the first to make room is not what New means anywhere
+else.
+
+## Preferences
+
+Three tabs, under the gear:
+
+- **Figures** — the palette, width and height new figures start with, the
+  colour-blind safe mode, and the DPI the export dialog opens at.
+- **Results** — decimal places, whether p-values below 0.0001 are shown exactly
+  or as a threshold, and how hard an exact test may work the machine.
+- **Application** — interface density (compact on a 13-inch laptop, roomy on a
+  33-inch monitor), how often to autosave, whether to ask before closing, and
+  whether to check for a new version at startup.
+
+## Updates
+
+At startup AssayPlot asks GitHub which release is newest. If there is one, it
+says so and shows what changed; nothing is downloaded and nothing is installed
+unless you say yes. No information about you or your data is sent, and the
+check can be turned off in Preferences.
+
+What happens after the download depends on the platform, and the dialog says
+which before it starts:
+
+- **macOS** — the disk image opens. Drag AssayPlot onto Applications and choose
+  Replace.
+- **Windows** — the installer runs and replaces this version in place.
+  AssayPlot closes first.
+- **Linux** — the AppImage is saved to Downloads and marked executable. Replace
+  the copy you are running with it.
 
 ## What the app will not do
 

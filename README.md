@@ -80,7 +80,8 @@ dropping the subject when one is missing.
 
 Grab the build for your machine from the
 [releases page](https://github.com/FarisHrvat/assayplot/releases) and open it.
-Nothing else to install.
+Nothing else to install. After that it tells you when a new version is out and
+offers to fetch it.
 
 | Your machine | File |
 |---|---|
