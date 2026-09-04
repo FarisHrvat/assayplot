@@ -130,8 +130,8 @@ the artefacts.
 ## Cutting the release
 
 ```bash
-git tag -a v0.6.0 -m "AssayPlot 0.5.0"
-git push origin v0.6.0
+git tag -a v0.7.0 -m "AssayPlot 0.5.0"
+git push origin v0.7.0
 ```
 
 CI builds macOS, Linux and Windows and attaches the artefacts. Publish checksums
