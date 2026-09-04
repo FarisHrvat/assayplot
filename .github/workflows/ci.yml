@@ -66,14 +66,29 @@ jobs:
       - name: Run the suite against the freshly generated fixtures
         run: npm test
 
+  # The same four targets the release builds, so what CI proves and what people
+  # download are the same set. A macOS runner produces two of them, which is why
+  # this is a list of targets rather than a list of runners.
   desktop:
-    name: Desktop build (${{ matrix.os }})
+    name: ${{ matrix.label }}
     strategy:
       fail-fast: false
       matrix:
-        # 22.04 rather than latest: Ubuntu 24.04 cannot resolve
-        # libappindicator3-dev, which Tauri's Linux bundler still wants.
-        os: [macos-latest, ubuntu-22.04, windows-latest]
+        include:
+          - label: macOS (Apple Silicon)
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - label: macOS (Intel)
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - label: Windows (x64)
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          # 22.04 rather than latest: Ubuntu 24.04 cannot resolve
+          # libappindicator3-dev, which Tauri's Linux bundler still wants.
+          - label: Linux (x64)
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -82,9 +97,12 @@ jobs:
           node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          key: ${{ matrix.target }}
       - name: Linux build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -93,22 +111,28 @@ jobs:
             build-essential curl wget file libssl-dev libgtk-3-dev \
             libayatana-appindicator3-dev
       - run: npm ci
-      # macOS is packaged separately: Tauri's DMG step drives Finder over
+      # macOS is packaged by our own script: Tauri's DMG step drives Finder over
       # AppleScript, which no CI runner can satisfy.
-      - name: Build installers (macOS)
-        if: matrix.os == 'macos-latest'
-        run: npm run desktop:dmg
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          npx tauri build --target ${{ matrix.target }} --bundles app
+          bash scripts/make-dmg.sh ${{ matrix.target }}
 
-      - name: Build installers (Linux, Windows)
+      - name: Build (Windows and Linux)
         if: runner.os != 'macOS'
-        run: npm run desktop:build:installers
+        run: npx tauri build --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
-          name: assayplot-${{ matrix.os }}
+          name: assayplot-${{ matrix.target }}
+          # Building for an explicit target puts the bundle under the triple,
+          # not under target/release. Erroring rather than warning on an empty
+          # match: a green build that produced nothing is worse than a red one.
           path: |
-            src-tauri/target/release/bundle/**/*.dmg
-            src-tauri/target/release/bundle/**/*.AppImage
-            src-tauri/target/release/bundle/**/*.deb
-            src-tauri/target/release/bundle/**/*.msi
-            src-tauri/target/release/bundle/**/*.exe
-          if-no-files-found: warn
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.rpm
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+          if-no-files-found: error
