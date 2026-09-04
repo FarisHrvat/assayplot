@@ -71,8 +71,8 @@ AssayPlot installed. Work is autosaved and offered back after a crash. Reports
 export as HTML or Markdown, or go straight to a page in your own Notion
 workspace using an integration you create.
 
-Not built yet: three-way ANOVA, crossed random effects, confidence intervals on
-dose–response parameters, and subcolumn replicates. Repeated measures are handled
+Not built yet: three-way ANOVA, crossed random effects, and subcolumn
+replicates. Repeated measures are handled
 by the mixed-effects model, which uses every value a subject gave rather than
 dropping the subject when one is missing.
 

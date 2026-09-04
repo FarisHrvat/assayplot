@@ -16,6 +16,7 @@ import * as agreement from '../src/core/agreement.js';
 import * as regression from '../src/core/regression.js';
 import * as multivariate from '../src/core/multivariate.js';
 import * as designs from '../src/core/designs.js';
+import * as nonlinear from '../src/core/nonlinear.js';
 
 const fixtures = JSON.parse(
   readFileSync(new URL('../validation/fixtures/reference.json', import.meta.url), 'utf8')
@@ -150,6 +151,41 @@ const RUNNERS = {
     };
   },
 
+  fitDoseResponse: ({ x, y }) => {
+    const fit = nonlinear.fitDoseResponse(x, y);
+    return {
+      estimates: fit.terms.map((term) => term.estimate),
+      standardErrors: fit.terms.map((term) => term.standardError),
+      pValues: fit.terms.map((term) => term.pValue),
+      lower: fit.terms.map((term) => term.confidenceInterval[0]),
+      upper: fit.terms.map((term) => term.confidenceInterval[1]),
+      sigma: fit.sigma,
+      residualSumSquares: fit.residualSumSquares,
+      residualDf: fit.residualDf,
+      // R counts the variance as a parameter; AICc adds a small-sample term
+      // on top, so the comparable number is the uncorrected one.
+      aic: nonlinear.akaike(fit.n, fit.residualSumSquares, fit.parameterCount + 1)
+        - (2 * (fit.parameterCount + 1) * (fit.parameterCount + 2)) / (fit.n - fit.parameterCount - 2),
+    };
+  },
+  compareDoseResponse: ({ x, y }) => {
+    const richer = nonlinear.fitDoseResponse(x, y);
+    const simpler = nonlinear.fitDoseResponse(x, y, { fixed: { 3: 1 } });
+    const test = nonlinear.compareFits(simpler, richer);
+    const plainAic = (fit) =>
+      fit.n * Math.log(fit.residualSumSquares / fit.n)
+      + 2 * (fit.parameterCount + 1)
+      + fit.n * (1 + Math.log(2 * Math.PI));
+    return {
+      simplerResidualSumSquares: simpler.residualSumSquares,
+      simplerResidualDf: simpler.residualDf,
+      fStatistic: test.fStatistic,
+      pValue: test.pValue,
+      aicSimpler: plainAic(simpler),
+      aicRicher: plainAic(richer),
+    };
+  },
+
   mcnemarTest: ({ table }) => agreement.mcnemarTest(table),
   cohensKappa: ({ table }) => agreement.cohensKappa(table),
   tost: ({ a, b, bound }) => agreement.tost(a, b, bound),
@@ -209,6 +245,16 @@ const FIELD_TOLERANCE = {
   // GEE re-estimates the working correlation each pass, so both land a hair apart.
   standardErrors: 1e-6, estimates: 1e-7, subjectSd: 1e-6, residualSd: 1e-6,
   fStatistic: 1e-6, workingCorrelation: 1e-8,
+  // The dose-response optimum is flat: a millionth on Bottom moves the residual
+  // in the eleventh figure. Ours is the smaller residual (checked by plugging in
+  // R's parameters). The residual itself is compared at full precision.
+  lower: 1e-5, upper: 1e-5,
+};
+
+/** Cases where the flat-optimum reasoning above applies to the estimates too. */
+const CASE_TOLERANCE = {
+  doseresponse_intervals: { estimates: 1e-5, standardErrors: 1e-5, pValues: 1e-4 },
+  doseresponse_compare: { fStatistic: 1e-6, pValue: 1e-8 },
 };
 
 /** Fields R reports that AssayPlot deliberately names differently or omits. */
@@ -228,7 +274,8 @@ for (const testCase of fixtures.cases) {
       if (SKIP_FIELDS.has(field)) continue;
 
       const actualValue = result[field];
-      const tolerance = FIELD_TOLERANCE[field] ?? CLOSED_FORM_TOLERANCE;
+      const tolerance =
+        CASE_TOLERANCE[id]?.[field] ?? FIELD_TOLERANCE[field] ?? CLOSED_FORM_TOLERANCE;
 
       if (typeof expectedValue === 'boolean') {
         assert.equal(actualValue, expectedValue, `${id}.${field}`);

@@ -390,20 +390,24 @@ export const METHOD_HELP: Record<Method, MethodHelp> = {
   },
 
   doseresponse: {
-    answers: 'What concentration gives a half-maximal response?',
-    needs: 'An XY table with concentration in X.',
-    assumes: ['The response is sigmoid in log concentration.', 'Enough points on both plateaus and through the middle to pin all four parameters.'],
+    answers: 'What concentration gives a half-maximal response, and how sure am I of it?',
+    needs: 'An XY table: concentration in X, response in Y. Concentrations must be above zero.',
+    assumes: [
+      'The response is sigmoid in log concentration, and flattens at both ends.',
+      'Scatter is similar across the range. If the top of the curve is much noisier than the bottom, the fit is pulled towards the noisy end.',
+      'The concentrations bracket the EC50. Extrapolating one from a curve that never levels off is guesswork with a number attached.',
+    ],
     doesNot: [
-      'Report a confidence interval on the EC50 yet. Treat it as a point estimate.',
-      'Compare two curves statistically.',
-      'Use a zero-dose control — zero has no place on a log axis. Those rows are dropped and counted.',
+      'Prove the curve is sigmoid. A four-parameter model will fit almost any monotonic data.',
+      'Give a profile-likelihood interval. The intervals are Wald, so where the curve is poorly determined they are optimistic.',
     ],
     how: [
-      'Put concentration in X and response in Y.',
-      'Pick Dose–response curve. Tick "X is already on a log scale" if your column holds log₁₀ values.',
-      'Turn on Log scale on X in the figure to get the familiar sigmoid.',
+      'Pick Dose–response. Tick "X is already on a log scale" if the column holds log10 concentration.',
+      'Read the EC50 with its confidence interval, not on its own.',
+      'Check the comparison beneath it: if the Hill slope is not distinguishable from 1, the three-parameter curve is the better estimate of potency.',
     ],
-    reports: 'EC50 or IC50 in concentration units, the Hill slope, Top and Bottom, R² and n. Say how many points and whether any were excluded.',
+    reports: 'EC50 with its 95% confidence interval, the Hill slope, Top and Bottom, n, and R². Say that the interval is Wald and how many points the fit used.',
+    insteadUse: 'Linear regression if the response has not levelled off at either end: fitting a plateau that is not in the data invents the parameter that matters most.',
   },
 
   chisq: {
