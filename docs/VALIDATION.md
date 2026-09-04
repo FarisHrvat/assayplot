@@ -28,7 +28,18 @@ macOS on ARM and Linux on x86. A handful of fields R computes by integration or
 iteration are compared more loosely, and `scripts/compare-fixtures.mjs` names
 each one and says why — R's `ptukey`, for instance, returns
 2.1080936996043 × 10⁻¹⁰ on one platform and 2.10809036893522 × 10⁻¹⁰ on the
-other for the same input. Even so the check still fails on a change of one part
+other for the same input.
+
+The dose–response cases are looser again, and for a sharper reason: a nonlinear
+least-squares optimum is *flat*. R's own `nls` lands on a different point on
+macOS than on Linux for the same nine data points — the estimates differ in the
+eighth figure while the residual sum of squares agrees to the eleventh.
+Comparing the estimates any tighter would measure which machine ran the job.
+The residual, sigma and AIC are still held to 1 × 10⁻⁹, so a change to the fit
+itself has nowhere to hide; a shift of one part in ten thousand in the EC50 is
+caught.
+
+Even so the check still fails on a change of one part
 in a million to a Tukey p-value, which is two orders of magnitude finer than
 any real change to a procedure. That catches both a regression in AssayPlot and a
 change in R's own behaviour, and it makes hand-editing a fixture to force a pass

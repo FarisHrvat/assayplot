@@ -42,6 +42,24 @@ const FIELD_TOLERANCE = {
   subjectSd: 1e-9, residualSd: 1e-9,
 };
 
+/**
+ * Cases where the fit itself is the imprecise part. A nonlinear least-squares
+ * optimum is flat: R's own nls lands on a different point on macOS/ARM than on
+ * Linux/x86 for the same input, differing in the eighth figure while the
+ * residual agrees to the eleventh. Comparing the estimates more tightly than
+ * that measures which machine ran it, not whether the procedure changed.
+ */
+const CASE_TOLERANCE = {
+  doseresponse_intervals: {
+    estimates: 1e-6, standardErrors: 1e-6, lower: 1e-6, upper: 1e-6,
+    pValues: 1e-4, sigma: 1e-9, residualSumSquares: 1e-9, aic: 1e-9,
+  },
+  doseresponse_compare: {
+    fStatistic: 1e-5, pValue: 1e-7,
+    simplerResidualSumSquares: 1e-9, aicSimpler: 1e-9, aicRicher: 1e-9,
+  },
+};
+
 /** The last named segment of a path like "tukey.pValues[0]". */
 function fieldOf(path) {
   const segments = path.replace(/\[\d+\]/g, '').split('.');
@@ -60,11 +78,12 @@ const right = load(rightPath);
 
 const differences = [];
 
-function compare(a, b, path) {
+function compare(a, b, path, caseId) {
   if (typeof a === 'number' && typeof b === 'number') {
     if (Number.isNaN(a) && Number.isNaN(b)) return;
     if (Math.abs(a) < NEGLIGIBLE && Math.abs(b) < NEGLIGIBLE) return;
-    const tolerance = FIELD_TOLERANCE[fieldOf(path)] ?? TOLERANCE;
+    const tolerance =
+      CASE_TOLERANCE[caseId]?.[fieldOf(path)] ?? FIELD_TOLERANCE[fieldOf(path)] ?? TOLERANCE;
     const scale = Math.max(Math.abs(a), Math.abs(b), Number.MIN_VALUE);
     const error = Math.abs(a - b) / scale;
     if (error > tolerance) {
@@ -79,7 +98,7 @@ function compare(a, b, path) {
       differences.push(`${path}: ${a.length} values committed, ${b.length} now`);
       return;
     }
-    a.forEach((value, index) => compare(value, b[index], `${path}[${index}]`));
+    a.forEach((value, index) => compare(value, b[index], `${path}[${index}]`, caseId));
     return;
   }
   if (a && b && typeof a === 'object' && typeof b === 'object') {
@@ -87,7 +106,7 @@ function compare(a, b, path) {
     for (const key of keys) {
       if (!(key in a)) { differences.push(`${path}.${key}: new in the regenerated file`); continue; }
       if (!(key in b)) { differences.push(`${path}.${key}: missing from the regenerated file`); continue; }
-      compare(a[key], b[key], `${path}.${key}`);
+      compare(a[key], b[key], `${path}.${key}`, caseId);
     }
     return;
   }
@@ -101,7 +120,7 @@ const regenerated = byId(right);
 for (const id of new Set([...Object.keys(committed), ...Object.keys(regenerated)])) {
   if (!committed[id]) { differences.push(`${id}: a new case R produces but the file does not have`); continue; }
   if (!regenerated[id]) { differences.push(`${id}: committed but R no longer produces it`); continue; }
-  compare(committed[id].expected, regenerated[id].expected, id);
+  compare(committed[id].expected, regenerated[id].expected, id, id);
 }
 
 if (differences.length) {
