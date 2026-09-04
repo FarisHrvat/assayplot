@@ -127,6 +127,18 @@ from the fit and you are told how many.
 
 Turn on **Log scale on X** in the figure to get the familiar sigmoid.
 
+Every parameter comes with a **95% confidence interval**. Quote the EC50 with
+its interval, never on its own: six points with scatter can put it anywhere
+across a log unit, and a number to four figures hides that completely. If the
+interval spans more than two orders of magnitude AssayPlot says so — those
+concentrations did not locate the EC50.
+
+Beneath the parameters is a comparison against the **three-parameter** curve,
+which is the same model with the Hill slope pinned at 1. If the slope is not
+distinguishable from 1, the simpler curve fits as well with one parameter fewer
+and gives the more stable potency estimate. The test is the extra
+sum-of-squares *F*, with AICc beside it.
+
 ## Multiple comparisons
 
 Comparing three groups means three tests, and three chances at a false positive.
@@ -282,8 +294,6 @@ which before it starts:
 Being explicit, so nothing surprises you at review time:
 
 - It does **not** pick a statistical test for you.
-- It does **not** give confidence intervals on dose–response parameters yet, or
-  compare alternative models.
 - It has no three-way ANOVA, and no crossed random effects. Repeated measures
   go through the mixed-effects model, which keeps a subject who missed one
   measurement instead of dropping them.

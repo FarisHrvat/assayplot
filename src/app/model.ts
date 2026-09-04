@@ -19,6 +19,8 @@ import * as regression from '../core/regression.js';
 import * as multivariate from '../core/multivariate.js';
 // @ts-ignore
 import * as designs from '../core/designs.js';
+// @ts-ignore
+import * as nonlinear from '../core/nonlinear.js';
 
 export type Cell = number | string | null;
 
@@ -1872,10 +1874,23 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
           };
         }
 
-        const raw: any = stats.fitFourParameterLogistic(
-          pairs.map((pair) => pair.concentration),
-          pairs.map((pair) => pair.y)
-        );
+        const concentrations = pairs.map((pair) => pair.concentration);
+        const responses = pairs.map((pair) => pair.y);
+        const raw: any = nonlinear.fitDoseResponse(concentrations, responses);
+
+        // The three-parameter model is the same curve with the Hill slope
+        // pinned at 1. Comparing them answers whether the data actually
+        // supported estimating a slope, which a four-parameter fit alone
+        // never asks.
+        let comparison: any = null;
+        if (raw.residualDf >= 1 && pairs.length >= 5) {
+          try {
+            const simpler = nonlinear.fitDoseResponse(concentrations, responses, { fixed: { 3: 1 } });
+            comparison = { ...nonlinear.compareFits(simpler, raw), simpler };
+          } catch {
+            comparison = null;
+          }
+        }
 
         // Sampled geometrically, because a dose-response curve is read on a
         // log axis and even spacing would leave the low end unresolved.
@@ -1890,6 +1905,15 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
         });
 
         const dropped = x.length - pairs.length;
+        const label: Record<string, string> = {
+          bottom: 'Bottom', top: 'Top', ec50: 'EC50 / IC50', hillSlope: 'Hill slope',
+        };
+        const interval = (term: any) =>
+          term.confidenceInterval
+            ? `${formatNumber(term.confidenceInterval[0])} to ${formatNumber(term.confidenceInterval[1])}`
+            : 'fixed';
+
+        const ec50Term = raw.terms[2];
         return {
           ...base,
           raw: {
@@ -1897,17 +1921,52 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
             ec50: raw.ec50, hillSlope: raw.hillSlope,
             top: raw.top, bottom: raw.bottom,
             r2: raw.r2, rmse: raw.rmse,
+            terms: raw.terms, residualDf: raw.residualDf, aicc: raw.aicc,
+            comparison,
           },
           fittedCurve,
           summary: [
-            { label: 'EC50 / IC50', value: formatNumber(raw.ec50), note: 'concentration giving a half-maximal response' },
-            { label: 'Hill slope', value: formatNumber(raw.hillSlope) },
-            { label: 'Top', value: formatNumber(raw.top) },
-            { label: 'Bottom', value: formatNumber(raw.bottom) },
-            { label: 'R²', value: formatNumber(raw.r2), note: `n = ${raw.n}` },
+            { label: 'EC50 / IC50', value: formatNumber(raw.ec50), note: `95% CI ${interval(ec50Term)}` },
+            { label: 'Hill slope', value: formatNumber(raw.hillSlope), note: `95% CI ${interval(raw.terms[3])}` },
+            { label: 'Top', value: formatNumber(raw.top), note: `95% CI ${interval(raw.terms[1])}` },
+            { label: 'Bottom', value: formatNumber(raw.bottom), note: `95% CI ${interval(raw.terms[0])}` },
+            { label: 'R²', value: formatNumber(raw.r2), note: `n = ${raw.n}, ${raw.residualDf} df` },
+          ],
+          tables: [
+            {
+              title: 'Parameters, with 95% confidence intervals',
+              columns: ['Parameter', 'Estimate', 'SE', '95% CI'],
+              rows: raw.terms.map((term: any) => [
+                label[term.name] ?? term.name,
+                formatNumber(term.estimate),
+                term.standardError === null ? 'fixed' : formatNumber(term.standardError),
+                interval(term),
+              ]),
+            },
+            ...(comparison ? [{
+              title: 'Is the Hill slope worth estimating?',
+              columns: ['Model', 'Parameters', 'Residual SS', 'df', 'AICc'],
+              rows: [
+                ['Hill slope fixed at 1', '3', formatNumber(comparison.simpler.residualSumSquares),
+                  String(comparison.simpler.residualDf), formatNumber(comparison.simpler.aicc, 2)],
+                ['Hill slope estimated', '4', formatNumber(raw.residualSumSquares),
+                  String(raw.residualDf), formatNumber(raw.aicc, 2)],
+              ],
+            }] : []),
           ],
           warnings: [
-            'This fit reports no confidence interval on the EC50 and does not compare alternative models. Treat it as a point estimate.',
+            ...(comparison
+              ? [comparison.pValue < 0.05
+                  ? `Estimating the Hill slope is justified: F(${comparison.numeratorDf}, ${comparison.denominatorDf}) = ${formatNumber(comparison.fStatistic, 3)}, P ${formatP(comparison.pValue)}. The simpler curve with a slope of 1 fits materially worse.`
+                  : `The Hill slope is not distinguishable from 1: F(${comparison.numeratorDf}, ${comparison.denominatorDf}) = ${formatNumber(comparison.fStatistic, 3)}, P ${formatP(comparison.pValue)}. The three-parameter curve fits as well with one parameter fewer, and its EC50 is the more stable estimate.`]
+              : []),
+            ...(raw.poorlyDetermined
+              ? ['The interval on the EC50 spans more than two orders of magnitude, which means these concentrations did not locate it. Extend the range, or add points near the middle of the curve.']
+              : []),
+            ...(raw.residualDf < 3
+              ? [`Only ${raw.residualDf} residual degrees of freedom. The intervals above are wide for a reason, and a fit this close to saturated is not evidence of much.`]
+              : []),
+            'Intervals are Wald: estimate plus or minus t times the standard error. Where a curve is poorly determined they are optimistic — a profile-likelihood interval would be wider and asymmetric.',
             ...(dropped > 0 ? [`${dropped} point(s) at zero or negative concentration were left out of the fit.`] : []),
           ],
         };

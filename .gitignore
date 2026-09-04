@@ -4,3 +4,7 @@ src-tauri/target/
 src-tauri/gen/schemas/
 .DS_Store
 *.log
+# Local tooling configuration, not part of the project.
+.claude/
+.vscode/
+.idea/

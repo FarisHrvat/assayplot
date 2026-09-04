@@ -485,6 +485,38 @@ add("mendelian", "mendelianRandomization",
          eggerInterceptPValue = unname(mr_es[1, 4])),
     "IVW as weighted regression through the origin, MR-Egger with a free intercept")
 
+# ---- dose-response intervals and model comparison -----------------------
+dr_x <- c(0.01, 0.03, 0.1, 0.3, 1, 3, 10, 30, 100)
+dr_y <- c(4.8, 6.1, 12.4, 28.9, 55.2, 78.1, 91.0, 96.4, 98.2)
+
+dr4 <- nls(dr_y ~ Bottom + (Top - Bottom) / (1 + (EC50 / dr_x)^Hill),
+           start = list(Bottom = 5, Top = 98, EC50 = 1, Hill = 1))
+dr_s <- summary(dr4)
+dr_df <- dr_s$df[2]
+# Wald intervals on t, not the normal quantile confint.default uses: with nine
+# points and four parameters the difference is a fifth of the width.
+dr_t <- qt(0.975, dr_df)
+dr_est <- dr_s$coefficients[, 1]
+dr_se <- dr_s$coefficients[, 2]
+
+add("doseresponse_intervals", "fitDoseResponse", list(x = dr_x, y = dr_y),
+    list(estimates = unname(dr_est), standardErrors = unname(dr_se),
+         pValues = unname(dr_s$coefficients[, 4]),
+         lower = unname(dr_est - dr_t * dr_se), upper = unname(dr_est + dr_t * dr_se),
+         sigma = dr_s$sigma, residualSumSquares = sum(residuals(dr4)^2),
+         residualDf = dr_df, aic = AIC(dr4)),
+    "nls, with Wald intervals on t")
+
+dr3 <- nls(dr_y ~ Bottom + (Top - Bottom) / (1 + (EC50 / dr_x)),
+           start = list(Bottom = 5, Top = 98, EC50 = 1))
+dr_anova <- anova(dr3, dr4)
+add("doseresponse_compare", "compareDoseResponse", list(x = dr_x, y = dr_y),
+    list(simplerResidualSumSquares = sum(residuals(dr3)^2),
+         simplerResidualDf = summary(dr3)$df[2],
+         fStatistic = dr_anova$F[2], pValue = dr_anova$`Pr(>F)`[2],
+         aicSimpler = AIC(dr3), aicRicher = AIC(dr4)),
+    "extra sum-of-squares F test, four parameters against three")
+
 out <- list(
   generatedBy = paste("R", getRversion()),
   note = "Golden values produced by R. Regenerate with validation/generate/reference.R.",
