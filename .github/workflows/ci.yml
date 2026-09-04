@@ -109,6 +109,7 @@ jobs:
       - run: npm ci
       # macOS is packaged by our own script: Tauri's DMG step drives Finder over
       # AppleScript, which no CI runner can satisfy.
+      # No signing here, that's release.yml.
       - name: Build (macOS)
         if: runner.os == 'macOS'
         run: |

@@ -101,8 +101,15 @@ jobs:
 
       # macOS is packaged by our own script: Tauri's DMG step drives Finder over
       # AppleScript, which no CI runner can satisfy.
-      - name: Build (macOS)
-        if: runner.os == 'macOS'
+      # Two steps: an empty APPLE_SIGNING_IDENTITY makes Tauri try to sign with "".
+      - name: Build (macOS, unsigned)
+        if: runner.os == 'macOS' && env.APPLE_CERTIFICATE == ''
+        run: |
+          npx tauri build --target ${{ matrix.target }} --bundles app
+          bash scripts/make-dmg.sh ${{ matrix.target }}
+
+      - name: Build (macOS, signed and notarised)
+        if: runner.os == 'macOS' && env.APPLE_CERTIFICATE != ''
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
