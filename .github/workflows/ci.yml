@@ -113,6 +113,9 @@ jobs:
       - run: npm ci
       # macOS is packaged by our own script: Tauri's DMG step drives Finder over
       # AppleScript, which no CI runner can satisfy.
+      # CI never signs: it proves the build compiles and bundles on each
+      # target. The release workflow is where a certificate, if there is one,
+      # gets used.
       - name: Build (macOS)
         if: runner.os == 'macOS'
         run: |
