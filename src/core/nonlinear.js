@@ -1,14 +1,10 @@
-// Dose-response fitting, with intervals on the parameters and a test for
-// comparing one fit against another.
+// Dose-response fitting: parameter intervals, and a test between two fits.
 //
-// An EC50 without an interval is half an answer: it says where the curve
-// crosses halfway but nothing about how well the data pinned that down. Six
-// points with scatter can put the EC50 anywhere across a log unit, and a
-// number printed to four figures hides that completely.
+// An EC50 without an interval is half an answer. Six scattered points can put
+// it anywhere across a log unit, which four printed figures hide completely.
 //
-// The fit is Levenberg-Marquardt on the natural parameterisation, so the
-// covariance comes out in the units the parameters are reported in and no
-// delta-method approximation is needed.
+// Levenberg-Marquardt on the natural parameterisation, so the covariance comes
+// out in the units the parameters are reported in.
 
 import { studentTCdf, studentTQuantile } from './stats.js';
 import { choleskySolve, invertSymmetric } from './regression.js';
@@ -19,11 +15,8 @@ function response(parameters, x) {
   return bottom + (top - bottom) / (1 + (ec50 / x) ** hill);
 }
 
-/**
- * Derivatives with respect to each parameter, written out rather than
- * differenced: a numerical Jacobian loses half the digits, and those digits
- * are the standard errors.
- */
+// Analytic, not differenced: a numerical Jacobian loses half the digits, and
+// those digits are the standard errors.
 function gradient(parameters, x) {
   const [bottom, top, ec50, hill] = parameters;
   const ratio = ec50 / x;
@@ -42,11 +35,7 @@ function gradient(parameters, x) {
 const sumSquares = (parameters, x, y) =>
   y.reduce((sum, value, i) => sum + (value - response(parameters, x[i])) ** 2, 0);
 
-/**
- * Levenberg-Marquardt. The damping starts small and rises only when a step
- * makes things worse, which is what keeps it from walking off a plateau when
- * the Hill slope is barely identified.
- */
+/** Damping rises only on a failed step, which keeps it on a flat plateau. */
 function levenbergMarquardt(start, x, y, fixed = {}, iterations = 400) {
   const free = [0, 1, 2, 3].filter((index) => !(index in fixed));
   let parameters = start.slice();
