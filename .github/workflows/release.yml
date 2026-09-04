@@ -48,6 +48,12 @@ jobs:
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
     runs-on: ${{ matrix.os }}
+    # Hoisted to the job: a step's `if` reads job-level env, not the step's own,
+    # and the secrets context is not available in `if` at all. This is how a
+    # signing step is made to skip itself when nobody has set the certificate.
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -76,10 +82,37 @@ jobs:
 
       - run: npm ci
 
+      # Signing is wired but inert until the certificates exist as repository
+      # secrets. Each block is a no-op when its secret is unset, so an unsigned
+      # build still succeeds and the day a certificate arrives nothing else has
+      # to change. docs/RELEASING.md has what to put where.
+      - name: Import the Apple certificate
+        if: runner.os == 'macOS' && env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain
+          rm -f "$RUNNER_TEMP/cert.p12"
+
       # macOS is packaged by our own script: Tauri's DMG step drives Finder over
       # AppleScript, which no CI runner can satisfy.
       - name: Build (macOS)
         if: runner.os == 'macOS'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           npx tauri build --target ${{ matrix.target }} --bundles app
           bash scripts/make-dmg.sh ${{ matrix.target }}
@@ -87,6 +120,23 @@ jobs:
       - name: Build (Windows and Linux)
         if: runner.os != 'macOS'
         run: npx tauri build --target ${{ matrix.target }}
+
+      # Azure Trusted Signing rather than a certificate file: Windows code
+      # signing certificates now require hardware-backed key storage, so there
+      # is no .pfx to put in a secret any more.
+      - name: Sign the Windows installers
+        if: runner.os == 'Windows' && env.AZURE_CLIENT_ID != ''
+        env:
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        uses: azure/trusted-signing-action@v0
+        with:
+          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_CERTIFICATE_PROFILE }}
+          files-folder: src-tauri/target/${{ matrix.target }}/release/bundle
+          files-folder-filter: exe,msi
+          files-folder-recurse: true
 
       - name: Collect artefacts
         shell: bash

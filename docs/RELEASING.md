@@ -6,9 +6,10 @@
 npm ci
 npm run licenses     # no runtime dependency outside the allow-list
 npm run typecheck
-npm test             # 165 tests, 36 checked against R
+npm test             # 256 tests, 63 checked against R
 npm run build
 npm run examples     # regenerate the worked projects
+npm run screenshots  # regenerate the README and site pictures (needs npm run dev)
 ```
 
 If R is installed, also confirm the fixtures still match the oracle:
@@ -20,6 +21,22 @@ git diff --exit-code validation/fixtures/    # must be empty
 
 A non-empty diff means either a regression or that R itself has changed. Find out
 which before releasing. Never commit a hand-edited fixture.
+
+## Badges
+
+The README and the landing page carry static badges, because shields.io cannot
+read a private repository and a live badge renders as "repo not found" until
+this goes public. Two of them quote numbers, so bump them with the version:
+
+- the release badge in `README.md` and `site/index.html`
+- the test count, if it changed (`npm test` prints it)
+
+The day the repository is public, swap them for the live versions:
+
+```
+https://img.shields.io/github/v/release/FarisHrvat/assayplot?include_prereleases&sort=semver
+https://github.com/FarisHrvat/assayplot/actions/workflows/ci.yml/badge.svg
+```
 
 ## Version numbers
 
@@ -51,7 +68,25 @@ This is the main thing standing between the current alpha and a 1.0 that labs
 can be asked to install.
 
 Neither can be automated away: both require the project owner's legal identity
-and payment.
+and payment. **The workflow is already wired for both.** Every signing step in
+`.github/workflows/release.yml` is guarded on its own secret and skips itself
+when that secret is unset, so unsigned builds keep working and nothing has to
+change on the day a certificate arrives — the secrets below are the whole job.
+
+| Secret | Used for |
+|---|---|
+| `APPLE_CERTIFICATE` | The Developer ID certificate, as base64 of the `.p12` |
+| `APPLE_CERTIFICATE_PASSWORD` | The password that `.p12` was exported with |
+| `APPLE_SIGNING_IDENTITY` | `Developer ID Application: NAME (TEAMID)` |
+| `APPLE_ID`, `APPLE_APP_PASSWORD`, `APPLE_TEAM_ID` | Notarisation |
+| `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID` | Trusted Signing credentials |
+| `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_CERTIFICATE_PROFILE` | Which certificate profile to sign with |
+
+Export the `.p12` with:
+
+```bash
+base64 -i DeveloperID.p12 | pbcopy      # paste as APPLE_CERTIFICATE
+```
 
 ### macOS
 
@@ -79,8 +114,10 @@ and payment.
 
 1. Obtain an OV or EV code-signing certificate. Issuance takes weeks and, since
    2023, requires hardware-backed key storage (a token or a cloud HSM).
-2. Configure `bundle.windows.certificateThumbprint` and `digestAlgorithm` in
-   `tauri.conf.json`, or sign the built `.msi` with `signtool`.
+2. Since a hardware-backed key cannot be put in a repository secret, signing
+   goes through **Azure Trusted Signing**: set the six `AZURE_*` secrets above
+   and the release workflow signs the `.exe` and `.msi` after the build. No
+   change to `tauri.conf.json` is needed.
 
 An EV certificate builds SmartScreen reputation immediately; an OV one accrues
 it over time and downloads, so early users will still see the warning.
@@ -93,8 +130,8 @@ the artefacts.
 ## Cutting the release
 
 ```bash
-git tag -a v0.3.0 -m "AssayPlot 0.3.0"
-git push origin v0.3.0
+git tag -a v0.5.0 -m "AssayPlot 0.5.0"
+git push origin v0.5.0
 ```
 
 CI builds macOS, Linux and Windows and attaches the artefacts. Publish checksums

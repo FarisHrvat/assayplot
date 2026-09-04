@@ -16,7 +16,8 @@
     "icon": "node scripts/make-icon.mjs",
     "licenses": "node scripts/licenses.mjs",
     "test": "node --import ./tests/register-tsx.mjs --test tests/*.test.js tests/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "screenshots": "node scripts/make-screenshots.mjs"
   },
   "license": "AGPL-3.0-or-later",
   "devDependencies": {
@@ -25,6 +26,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^5.2.0",
+    "puppeteer-core": "^25.10.0",
     "typescript": "^7.0.2",
     "vite": "^7.3.6"
   },

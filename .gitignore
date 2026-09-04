@@ -8,3 +8,6 @@ src-tauri/gen/schemas/
 .claude/
 .vscode/
 .idea/
+
+# Copied from docs/assets when the site is built; not a second copy in git.
+site/assets/

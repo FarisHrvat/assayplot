@@ -1,0 +1,52 @@
+# Publishes the landing page to GitHub Pages.
+#
+# The page is plain HTML with no build step. Its images are the ones the README
+# uses, copied in at publish time rather than committed twice.
+
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'docs/assets/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a queued run supersedes an older one rather than
+# racing it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble the site
+        run: |
+          mkdir -p site/assets
+          cp docs/assets/logo.svg docs/assets/wordmark.svg site/assets/
+          cp docs/assets/screen-figure.png docs/assets/screen-analysis.png site/assets/
+          # Tells Pages not to run Jekyll over it.
+          touch site/.nojekyll
+          ls -la site site/assets
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

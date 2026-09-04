@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>AssayPlot — free statistics and figures for the lab</title>
+<meta name="description" content="Free, open-source statistics and publication figures for the lab. 43 analyses checked against R, 37 plot types, runs offline on macOS, Windows and Linux.">
+<meta property="og:title" content="AssayPlot">
+<meta property="og:description" content="Free, open-source statistics and publication figures for the lab. Runs offline. No account, no subscription.">
+<meta property="og:type" content="website">
+<link rel="icon" href="assets/logo.svg">
+<style>
+  :root {
+    --paper: #f6f8f7; --surface: #ffffff; --sunk: #eef2f1;
+    --ink: #131d1c; --ink-soft: #46514f; --ink-faint: #78837f;
+    --rule: #dde4e2; --accent: #0c6259; --accent-soft: #e2efec;
+    --shadow: rgba(15, 40, 36, 0.12);
+    --radius: 10px;
+    --mono: "SF Mono", "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0f1716; --surface: #151f1e; --sunk: #1a2524;
+      --ink: #e7edeb; --ink-soft: #b3c0bd; --ink-faint: #8a9895;
+      --rule: #263230; --accent: #5fc3b3; --accent-soft: #16302c;
+      --shadow: rgba(0, 0, 0, 0.5);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 1.5rem; }
+  img { max-width: 100%; height: auto; }
+
+  header.top {
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--paper) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--rule);
+  }
+  .top .wrap { display: flex; align-items: center; gap: 1rem; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 0.6rem; font-weight: 650; letter-spacing: -0.01em; }
+  .brand img { width: 28px; height: 28px; }
+  .top nav { margin-left: auto; display: flex; gap: 1.1rem; font-size: 0.92rem; }
+  .top nav a { color: var(--ink-soft); text-decoration: none; }
+  .top nav a:hover { color: var(--accent); }
+
+  .hero { padding: 4.5rem 0 2.5rem; text-align: center; }
+  .hero h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); line-height: 1.1; margin: 0 0 1rem; letter-spacing: -0.03em; }
+  .hero p.lede { font-size: clamp(1.05rem, 2vw, 1.25rem); color: var(--ink-soft); max-width: 46ch; margin: 0 auto 1.8rem; }
+  .badges { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: center; margin-bottom: 1.8rem; }
+  .badges img { height: 20px; }
+
+  .cta { display: flex; gap: 0.7rem; justify-content: center; flex-wrap: wrap; }
+  .button {
+    display: inline-block; padding: 0.72rem 1.4rem; border-radius: var(--radius);
+    text-decoration: none; font-weight: 600; font-size: 0.95rem;
+    border: 1px solid var(--rule); color: var(--ink); background: var(--surface);
+  }
+  .button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .button:hover { border-color: var(--accent); }
+
+  .shot {
+    margin: 3rem auto 0; border-radius: var(--radius); overflow: hidden;
+    border: 1px solid var(--rule); box-shadow: 0 24px 60px var(--shadow);
+    background: var(--surface);
+  }
+  .shot img { display: block; }
+
+  section { padding: 3.5rem 0; }
+  section h2 { font-size: 1.7rem; letter-spacing: -0.02em; margin: 0 0 0.6rem; }
+  section > .wrap > p { color: var(--ink-soft); max-width: 68ch; }
+
+  .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); margin-top: 1.8rem; }
+  .card {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: var(--radius); padding: 1.2rem 1.3rem;
+  }
+  .card h3 { margin: 0 0 0.4rem; font-size: 1rem; }
+  .card p { margin: 0; font-size: 0.92rem; color: var(--ink-soft); }
+
+  .stats { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-top: 1.5rem; }
+  .stat { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); padding: 1.1rem 1.2rem; }
+  .stat strong { display: block; font-size: 1.9rem; letter-spacing: -0.02em; color: var(--accent); }
+  .stat span { font-size: 0.86rem; color: var(--ink-faint); }
+
+  table { border-collapse: collapse; width: 100%; margin-top: 1.4rem; font-size: 0.93rem; }
+  th, td { text-align: left; padding: 0.6rem 0.7rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { color: var(--ink-faint); font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  code { font-family: var(--mono); font-size: 0.88em; background: var(--sunk); padding: 0.1em 0.35em; border-radius: 3px; }
+
+  .band { background: var(--surface); border-block: 1px solid var(--rule); }
+  .note {
+    border-left: 3px solid var(--accent); background: var(--accent-soft);
+    padding: 0.9rem 1.1rem; border-radius: 0 var(--radius) var(--radius) 0;
+    font-size: 0.93rem; margin-top: 1.5rem;
+  }
+  .warn { border-left-color: #9c3a22; background: color-mix(in srgb, #9c3a22 10%, transparent); }
+
+  footer { border-top: 1px solid var(--rule); padding: 2.5rem 0; color: var(--ink-faint); font-size: 0.88rem; }
+  footer .wrap { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
+  footer nav { margin-left: auto; display: flex; gap: 1rem; }
+
+  @media (max-width: 640px) {
+    .top nav { display: none; }
+    .hero { padding: 3rem 0 2rem; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand"><img src="assets/logo.svg" alt=""> AssayPlot</span>
+    <nav>
+      <a href="#what">What it does</a>
+      <a href="#validation">Validation</a>
+      <a href="#download">Download</a>
+      <a href="https://github.com/FarisHrvat/assayplot">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<div class="hero wrap">
+  <h1>Statistics and publication figures for the lab</h1>
+  <p class="lede">
+    Free and open source, for people who would rather not write code.
+    Runs on your machine — no account, no cloud, no subscription.
+  </p>
+
+  <div class="badges">
+    <img src="https://img.shields.io/badge/release-v0.5.0-0C6259" alt="Release v0.5.0">
+    <img src="https://img.shields.io/badge/tests-256%20passing-2e6b36" alt="256 tests passing">
+    <img src="https://img.shields.io/badge/checked%20against%20R-63%20cases-0C6259" alt="63 procedures checked against R">
+    <img src="https://img.shields.io/badge/licence-AGPL--3.0-6B7A77" alt="AGPL-3.0 licence">
+  </div>
+
+  <div class="cta">
+    <a class="button primary" href="https://github.com/FarisHrvat/assayplot/releases/latest">Download for your machine</a>
+    <a class="button" href="https://github.com/FarisHrvat/assayplot">Read the source</a>
+  </div>
+
+  <div class="shot">
+    <img src="assets/screen-figure.png" alt="A bar chart with individual points, error bars and significance brackets, beside the panel that controls it" loading="lazy">
+  </div>
+</div>
+
+<section id="what">
+  <div class="wrap">
+    <h2>Everything an experiment needs, in one place</h2>
+    <p>Get the data in, run a test that states what it assumes, build the figure, and export something a journal will take.</p>
+
+    <div class="stats">
+      <div class="stat"><strong>43</strong><span>analyses</span></div>
+      <div class="stat"><strong>37</strong><span>plot types</span></div>
+      <div class="stat"><strong>63</strong><span>procedures checked against R</span></div>
+      <div class="stat"><strong>0</strong><span>bytes sent anywhere</span></div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>Reads what you already have</h3>
+        <p>CSV, TSV, TXT, XLSX, XLS and ODS, several files at once, or pasted straight from Excel. The delimiter and the decimal separator are detected, so <code>1,5</code> written in Italy stays one and a half.</p>
+      </div>
+      <div class="card">
+        <h3>Explains, never chooses</h3>
+        <p>A method that cannot run on your table is greyed out with the reason. Every one states what it assumes before you commit to it. It will not pick a test for you.</p>
+      </div>
+      <div class="card">
+        <h3>Figures you edit by clicking</h3>
+        <p>Click the title and type over it. Click a bar to recolour that series. Drag the corner to resize. Gridlines, log axes, error bars and significance brackets are all yours.</p>
+      </div>
+      <div class="card">
+        <h3>Exports a journal accepts</h3>
+        <p>SVG with live text, PNG at the resolution you choose, or PDF — saved wherever you point it, not into Downloads.</p>
+      </div>
+      <div class="card">
+        <h3>Shows its working</h3>
+        <p>Every analysis writes a methods sentence for the manuscript. The report carries a SHA-256 of each data table, so a reviewer can confirm the numbers analysed were the numbers supplied.</p>
+      </div>
+      <div class="card">
+        <h3>Your data stays put</h3>
+        <p>No account, no telemetry, no upload. Projects are a ZIP of readable JSON — unzip one and read your numbers without AssayPlot installed.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <h2>The analyses</h2>
+    <p>Post-hoc comparisons are done properly: Tukey HSD with real family-wise confidence intervals, Dunn's test after Kruskal–Wallis, each group against a control, or Holm and Benjamini–Hochberg on plain pairwise tests.</p>
+    <table>
+      <tr><th>Comparing groups</th><td>Welch, Student and paired <em>t</em>-tests · Mann–Whitney · Wilcoxon signed-rank · one-way ANOVA · Kruskal–Wallis · Friedman · two-way ANOVA with replication</td></tr>
+      <tr><th>X versus Y</th><td>Pearson · Spearman · linear regression · dose–response with confidence intervals on every parameter and a test of whether the Hill slope was worth estimating</td></tr>
+      <tr><th>Survival</th><td>Kaplan–Meier with log-rank · Cox proportional hazards</td></tr>
+      <tr><th>Counts</th><td>Chi-square with Yates · Fisher's exact · McNemar · Mantel–Haenszel</td></tr>
+      <tr><th>Modelling</th><td>Logistic · Poisson · ANCOVA · mixed-effects models · generalised estimating equations</td></tr>
+      <tr><th>Multivariate</th><td>Principal components · hierarchical clustering with bootstrap support · ANOSIM · PLS-DA</td></tr>
+      <tr><th>Agreement</th><td>Cohen's kappa · Bland–Altman · TOST equivalence</td></tr>
+      <tr><th>Meta-analysis</th><td>Cochran's <em>Q</em> and <em>I</em>²</td></tr>
+      <tr><th>Genetics</th><td>Transmission disequilibrium · Mendelian randomisation</td></tr>
+      <tr><th>Study design</th><td>Simon's two-stage design · the resource equation</td></tr>
+      <tr><th>Assumptions</th><td>Shapiro–Wilk · D'Agostino–Pearson · Levene · Bartlett · Grubbs · ROUT</td></tr>
+    </table>
+  </div>
+</section>
+
+<section id="validation">
+  <div class="wrap">
+    <h2>Are the numbers right?</h2>
+    <p>
+      Every procedure is checked against <strong>R</strong> on every test run. A script computes each
+      one in R at full precision and writes the results to JSON; those fixtures are committed, so the
+      suite runs anywhere Node runs. A second job regenerates them with R and fails if anything has
+      drifted — which makes editing a fixture to force a pass impossible to hide.
+    </p>
+
+    <div class="shot" style="margin-top:2rem">
+      <img src="assets/screen-analysis.png" alt="The analysis view: methods on the left grouped by question, the result on the right with what the test assumes" loading="lazy">
+    </div>
+
+    <div class="note">
+      <strong>Building that harness found sixteen real defects</strong>, none of which a
+      self-consistent test suite would have caught. A Mann–Whitney tie correction wrong by six per
+      cent. Tail p-values that underflowed to zero. A dose–response model with Top and Bottom the
+      wrong way round, which fitted the data perfectly and so looked right in every number except the
+      labels.
+      <a href="https://github.com/FarisHrvat/assayplot/blob/main/docs/VALIDATION.md">The full list</a>.
+    </div>
+
+    <div class="note warn">
+      AssayPlot is <strong>not validated for clinical or regulatory use</strong>. Agreement with R on
+      a test suite is not the same thing. For anything consequential, check the result with a
+      statistician.
+    </div>
+  </div>
+</section>
+
+<section class="band" id="download">
+  <div class="wrap">
+    <h2>Download</h2>
+    <p>Open it and start. Nothing else to install. After that it tells you when a new version is out and offers to fetch it.</p>
+    <table>
+      <tr><th>Your machine</th><th>File</th></tr>
+      <tr><td>Mac, Apple Silicon (M1 and later)</td><td><code>AssayPlot_x.y.z_aarch64.dmg</code></td></tr>
+      <tr><td>Mac, Intel</td><td><code>AssayPlot_x.y.z_x64.dmg</code></td></tr>
+      <tr><td>Windows</td><td><code>AssayPlot_x.y.z_x64-setup.exe</code></td></tr>
+      <tr><td>Linux, Debian or Ubuntu</td><td><code>AssayPlot_x.y.z_amd64.deb</code></td></tr>
+      <tr><td>Linux, anything else</td><td><code>AssayPlot_x.y.z_amd64.AppImage</code></td></tr>
+    </table>
+
+    <div class="note">
+      Builds are not signed yet, so your system will object the first time. On macOS, right-click the
+      app and choose Open, then Open again. On Windows, choose More info then Run anyway. Signing is
+      a release blocker and needs a developer certificate.
+    </div>
+
+    <div class="cta" style="margin-top:1.8rem; justify-content:flex-start">
+      <a class="button primary" href="https://github.com/FarisHrvat/assayplot/releases/latest">Go to the latest release</a>
+      <a class="button" href="https://github.com/FarisHrvat/assayplot/blob/main/docs/GUIDE.md">Read the user guide</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>AssayPlot · <a href="https://github.com/FarisHrvat/assayplot/blob/main/LICENSE">AGPL-3.0-or-later</a></span>
+    <nav>
+      <a href="https://github.com/FarisHrvat/assayplot/blob/main/docs/GUIDE.md">Guide</a>
+      <a href="https://github.com/FarisHrvat/assayplot/blob/main/docs/VALIDATION.md">Validation</a>
+      <a href="https://github.com/FarisHrvat/assayplot/blob/main/docs/ROADMAP.md">Roadmap</a>
+      <a href="https://github.com/FarisHrvat/assayplot">Source</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>
