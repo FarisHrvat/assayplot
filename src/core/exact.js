@@ -72,7 +72,7 @@ export function signedRankExactP(w, n) {
 /**
  * Conditional maximum-likelihood estimate of the odds ratio for a 2 x 2 table,
  * as reported by R's fisher.test. This differs from the sample cross-product
- * ratio (a*d)/(b*c), which is what GraphPad Prism reports; AssayPlot reports
+ * ratio (a*d)/(b*c), which most textbooks quote; AssayPlot reports
  * both, each explicitly labelled.
  *
  * Solves E[X | psi] = a over the noncentral hypergeometric distribution of the

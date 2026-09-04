@@ -422,7 +422,7 @@ export const METHOD_HELP: Record<Method, MethodHelp> = {
     assumes: ['Independent observations.', 'Fixed margins, strictly — in practice it is used more widely and is conservative.'],
     doesNot: ['Extend beyond 2 × 2 here.'],
     how: ['Enter a 2 × 2 table of counts.', 'Pick Fisher\'s exact test.'],
-    reports: 'The two-sided P and an odds ratio. Two odds ratios are shown: the cross-product, which Prism reports, and the conditional maximum-likelihood estimate, which R reports. Say which you quote.',
+    reports: 'The two-sided P and an odds ratio. Two odds ratios are shown: the cross-product, the textbook estimate, and the conditional maximum-likelihood estimate, which R reports. Say which you quote.',
   },
 
   survival: {

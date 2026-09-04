@@ -1,13 +1,46 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Outbound access to the Notion API, and nothing else. The user supplies their own integration token; it is stored on this machine and sent only to Notion.",
-  "windows": ["main"],
+  "description": "Saving files where the user chooses, opening a downloaded installer, and outbound access to two hosts: the Notion API for report export, and the GitHub releases API for the update check. Nothing else.",
+  "windows": [
+    "main",
+    "window-*"
+  ],
   "permissions": [
     "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close",
+    "core:window:allow-start-resize-dragging",
+    "core:window:allow-set-title",
+    "core:window:allow-is-fullscreen",
+    "core:window:allow-unmaximize",
+    "core:window:allow-maximize",
+    "core:webview:allow-create-webview-window",
+    "dialog:default",
+    "opener:default",
+    "process:allow-exit",
+    "process:allow-restart",
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [
+        {
+          "path": "**"
+        }
+      ]
+    },
     {
       "identifier": "http:default",
-      "allow": [{ "url": "https://api.notion.com/*" }]
+      "allow": [
+        {
+          "url": "https://api.notion.com/*"
+        },
+        {
+          "url": "https://api.github.com/*"
+        }
+      ]
     }
   ]
 }

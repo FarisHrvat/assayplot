@@ -6,7 +6,8 @@
 // cell edit invalidates exactly the nodes that depend on it and nothing else.
 
 import { create } from 'zustand';
-import { clearSnapshot, debounce, writeSnapshot } from './persist.ts';
+import { clearSnapshot, writeSnapshot } from './persist.ts';
+import { getSettings } from './settings.ts';
 import {
   type Analysis,
   type ColumnRole,
@@ -26,9 +27,17 @@ import {
   makeColumn,
   makeFigure,
   makeLayout,
+  availableMethods,
   makeTable,
+  newId,
   runAnalysis,
 } from './model.ts';
+
+/** The first method the shape supports, for when a re-pointed analysis loses its own. */
+function firstUsableMethod(table: DataTable): Method {
+  const usable = availableMethods(table).find((entry) => entry.usable);
+  return (usable?.info.id ?? 'descriptive') as Method;
+}
 
 export type Selection =
   | { kind: 'table'; id: string }
@@ -50,6 +59,20 @@ export interface Problem {
   fix?: string[];
 }
 
+/**
+ * A question put to the user, with the choices spelled out on the buttons.
+ * "Close without saving" says what will happen; "OK" does not.
+ */
+export interface Question {
+  id: string;
+  title: string;
+  detail?: string;
+  /** Consequences, listed so nothing is a surprise. */
+  points?: string[];
+  choices: { id: string; label: string; tone?: 'primary' | 'danger' }[];
+  onAnswer: (choice: string | null) => void;
+}
+
 interface State {
   project: Project;
   selection: Selection;
@@ -62,6 +85,14 @@ interface State {
   toast: string | null;
   /** Something that did not work. Stays until dismissed. */
   problem: Problem | null;
+  /**
+   * A question waiting on an answer. The webview blocks window.confirm, so a
+   * native confirm() silently returns false and the button it guards appears
+   * to do nothing. Every question goes through here instead.
+   */
+  question: Question | null;
+  /** Shown over everything while something slow runs, with what it is doing. */
+  working: string | null;
 
   commit: (next: Project, label?: string) => void;
   replaceProject: (next: Project) => void;
@@ -71,6 +102,9 @@ interface State {
   notify: (message: string | null) => void;
   reportProblem: (problem: Problem) => void;
   dismissProblem: () => void;
+  ask: (question: Omit<Question, 'id'>) => void;
+  answer: (choice: string | null) => void;
+  setWorking: (label: string | null) => void;
 
   setProjectName: (name: string) => void;
 
@@ -124,6 +158,8 @@ export const useStore = create<State>((set, get) => ({
   clipboard: [],
   toast: null,
   problem: null,
+  question: null,
+  working: null,
 
   commit: (next) =>
     set((state) => ({
@@ -172,6 +208,15 @@ export const useStore = create<State>((set, get) => ({
   notify: (toast) => set({ toast }),
   reportProblem: (problem) => set({ problem, toast: null }),
   dismissProblem: () => set({ problem: null }),
+
+  ask: (question) => set({ question: { ...question, id: newId('ask') }, toast: null }),
+  answer: (choice) => {
+    const pending = get().question;
+    set({ question: null });
+    if (pending) pending.onAnswer(choice);
+  },
+
+  setWorking: (working) => set({ working }),
 
   setProjectName: (name) => get().commit({ ...get().project, name }),
 
@@ -400,7 +445,26 @@ export const useStore = create<State>((set, get) => ({
 
   updateAnalysis: (id, patch) => {
     const project = get().project;
-    get().commit({ ...project, analyses: replaceById(project.analyses, id, patch) });
+    const current = project.analyses.find((analysis) => analysis.id === id);
+
+    // Column choices are ids from the old table, and a method may not run on
+    // the new one's shape. Both are cleared rather than left pointing at
+    // something that no longer exists.
+    let effective = patch;
+    if (current && patch.tableId && patch.tableId !== current.tableId) {
+      const next = project.tables.find((table) => table.id === patch.tableId);
+      const usable = next
+        ? availableMethods(next).find((entry) => entry.info.id === current.method)?.usable
+        : false;
+      const { columnIds, outcomeColumn, covariateColumn, groupColumn, controlIndex, ...kept } = current.options;
+      effective = {
+        ...patch,
+        options: kept,
+        ...(usable ? {} : { method: next ? firstUsableMethod(next) : current.method }),
+      };
+    }
+
+    get().commit({ ...project, analyses: replaceById(project.analyses, id, effective) });
   },
 
   setMethod: (id, method) => {
@@ -541,9 +605,31 @@ export function analysisById(project: Project, id: string | null): Analysis | un
  * safety net against a crash or a closed tab; the user's real save is still an
  * explicit file, and saving clears the snapshot.
  */
-const persist = debounce((project: Project, dirty: boolean) => {
-  void writeSnapshot(project, dirty);
-}, 800);
+let lastWrite = 0;
+let pending: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Throttled rather than debounced: a debounce at a fifteen-minute setting
+ * would write nothing until fifteen minutes after someone stopped typing,
+ * which is the opposite of what "autosave every fifteen minutes" promises.
+ * The first change after an interval writes at once; anything during it is
+ * held and written when the interval is up. A closing window flushes either
+ * way, so nothing is lost to the wait.
+ */
+function persist(project: Project, dirty: boolean) {
+  const interval = Math.max(800, getSettings().autosaveMinutes * 60_000);
+  const since = Date.now() - lastWrite;
+
+  const write = () => {
+    lastWrite = Date.now();
+    pending = null;
+    void writeSnapshot(project, dirty);
+  };
+
+  if (since >= interval) { write(); return; }
+  if (pending) return;
+  pending = setTimeout(write, interval - since);
+}
 
 let autosaveStarted = false;
 
@@ -559,8 +645,11 @@ export function startAutosave(): () => void {
     else void clearSnapshot();
   });
 
-  // A closing tab does not wait for a debounce.
-  const flush = () => persist.flush();
+  // A closing window does not wait for the interval.
+  const flush = () => {
+    const state = useStore.getState();
+    if (state.dirty) void writeSnapshot(state.project, true);
+  };
   window.addEventListener('beforeunload', flush);
   window.addEventListener('pagehide', flush);
 

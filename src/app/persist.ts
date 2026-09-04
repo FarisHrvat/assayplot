@@ -63,32 +63,3 @@ export async function readSnapshot(): Promise<Snapshot | null> {
 export async function clearSnapshot(): Promise<void> {
   await withStore('readwrite', (store) => store.delete(KEY) as IDBRequest<unknown>);
 }
-
-/**
- * Trailing-edge debounce: the last change before a crash is exactly the one
- * worth keeping, so `flush` runs it immediately when the tab is closing.
- */
-export function debounce<T extends (...args: any[]) => void>(
-  run: T,
-  delay: number
-): T & { flush: () => void } {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  let pending: unknown[] | null = null;
-
-  const fire = () => {
-    if (timer) clearTimeout(timer);
-    timer = null;
-    const args = pending;
-    pending = null;
-    if (args) run(...args);
-  };
-
-  const wrapped = ((...args: unknown[]) => {
-    pending = args;
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(fire, delay);
-  }) as T & { flush: () => void };
-
-  wrapped.flush = fire;
-  return wrapped;
-}

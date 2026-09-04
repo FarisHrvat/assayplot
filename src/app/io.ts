@@ -55,7 +55,7 @@ export function deserializeProject(bytes: Uint8Array): Project {
   if (!isZip) {
     const text = strFromU8(bytes);
     if (!text.trimStart().startsWith('{')) {
-      throw new Error('This file is not an AssayPlot project. A project is a .assayplot file; use Import data for spreadsheets.');
+      throw new Error('This file is not an AssayPlot project. A project is a .asp file; use Import data for spreadsheets.');
     }
     return migrate(JSON.parse(text));
   }
@@ -456,6 +456,16 @@ export function tableToCsv(table: DataTable): string {
   }
   return lines.join('\n');
 }
+
+/**
+ * The project file extension. Projects were `.assayplot` up to 0.4.0; those
+ * still open, because the format inside has not changed.
+ */
+export const PROJECT_EXTENSION = 'asp';
+export const PROJECT_EXTENSIONS = ['asp', 'assayplot'];
+export const PROJECT_FILTER = [
+  { name: 'AssayPlot project', extensions: PROJECT_EXTENSIONS },
+];
 
 export function download(filename: string, data: BlobPart, mime: string): void {
   const blob = new Blob([data], { type: mime });
