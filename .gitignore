@@ -7,3 +7,6 @@ src-tauri/gen/schemas/
 # Editors
 .vscode/
 .idea/
+
+# Copied from docs/assets when the site is built; not a second copy in git.
+site/assets/
