@@ -48,24 +48,21 @@ bootstrap interval.
 1. **Dose–response parameter intervals**, plus comparison of fits by
    extra-sum-of-squares F-test and AICc, and shared parameters across datasets.
    This is the single biggest gap for the labs most likely to switch.
-2. **Repeated-measures ANOVA.** Friedman covers the non-parametric case; the
-   parametric one is a common request and needs a subject factor in the model.
+2. **Crossed random effects.** The mixed-effects model takes one random
+   intercept per subject, which covers repeated measures. Two crossed factors —
+   subject and batch, say — need a general optimiser rather than the closed
+   form the single-intercept case allows.
 3. **Subcolumn replicates.** Technical replicates side by side within one
-   treatment column, as Prism does. A deep change to the data model, which is
+   treatment column. A deep change to the data model, which is
    why it has waited.
 4. **Analysis in a worker.** Everything currently recomputes on the main thread.
    That is fine today — 100k rows analyse in about 100 ms — but a slow procedure
    on a large table would freeze the interface.
-5. **Prism import.** Its CSV and XML exports, not the proprietary binary. Purely
-   an on-ramp for people with years of existing projects.
-6. **More figure control**: discontinuous axes, secondary Y axes, annotation
-   layers, per-point styling.
-
 ## Deliberately not doing
 
 - **A cloud service.** Local-first is the point. Optional sync could come later,
   but analysis will never require an account.
-- **Cloning Prism's interface or file format.** Independent implementation, open
+- **Cloning any commercial package's interface or file format.** Independent implementation, open
   format, and citations to the statistical literature.
 - **Claiming clinical or regulatory validation.** Agreement with R on a test
   suite is not the same thing, and saying otherwise would be dishonest.

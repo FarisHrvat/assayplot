@@ -40,8 +40,7 @@ Regenerate this inventory with `npm run licenses`.
 
 The numerical routines in `src/core/` are independent implementations. They were
 written from the published descriptions cited below and validated against R; no
-code was copied from R, from GraphPad Prism, or from any other statistics
-package.
+code was copied from R or from any other statistics package.
 
 - Royston, P. (1995). A remark on Algorithm AS 181: the W test for normality.
   *Applied Statistics* 44(4), 547–551. — Shapiro–Wilk.
@@ -74,6 +73,5 @@ no part of R is distributed with it.
 
 ## Trademarks
 
-GraphPad and Prism are trademarks of GraphPad Software, LLC. AssayPlot is not
-affiliated with, endorsed by, or derived from GraphPad Software. References to
-Prism in this repository describe an alternative product for comparison only.
+AssayPlot is not affiliated with or endorsed by any other statistics package,
+and no part of one is distributed with it.

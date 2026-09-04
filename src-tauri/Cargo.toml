@@ -19,6 +19,20 @@ tauri = { version = "2", features = [] }
 # Requests go out through Rust instead, restricted to api.notion.com by the
 # capability in capabilities/.
 tauri-plugin-http = "2"
+# Native save and open dialogs, and the file writes behind them. The webview
+# blocks window.confirm and gives no say over where a download lands; both
+# matter for a desktop app people save real work from.
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+# Reveals a downloaded installer, and opens a release page in the browser.
+tauri-plugin-opener = "2"
+# Relaunching after an update installs.
+tauri-plugin-process = "2"
+# The update check talks to the GitHub releases API directly.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs-next = "2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

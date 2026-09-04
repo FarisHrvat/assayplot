@@ -102,7 +102,7 @@ outline — must not appear in an export. Placeholders are tagged
 ## Reporting a wrong number
 
 This is the most valuable kind of report. Please include the data, the analysis
-you ran, what AssayPlot said, and what you expected — ideally with the R or Prism
+you ran, what AssayPlot said, and what you expected — ideally with the R
 output beside it. A reproducible disagreement with a trusted implementation goes
 straight to the front of the queue.
 

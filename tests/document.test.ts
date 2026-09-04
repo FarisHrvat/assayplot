@@ -448,7 +448,7 @@ test('a dose-response fit recovers the EC50 it was generated from', () => {
 });
 
 test('Bottom is the response at low dose and Top at high dose, for both directions', () => {
-  // The universal convention (Prism, drc): Bottom is the low-dose asymptote.
+  // The universal convention: Bottom is the low-dose asymptote.
   // An inverted parameterisation still fits the data perfectly, so only an
   // assertion on the labels catches it.
   const rising = runAnalysis(doseResponseTable('up'), doseAnalysis());

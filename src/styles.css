@@ -83,7 +83,8 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* In rem, so the density setting moves the body text with everything else. */
+  font: 0.875rem/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -920,3 +921,211 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 .hint-popover.right { left: auto; right: 0; }
 .hint-popover strong { color: var(--ink); }
 .hint-popover svg { display: block; margin: 0.4rem 0 0; background: #fff; border-radius: 3px; }
+
+/* ------------------------------------------------------- window chrome */
+/* The native title bar is off. It cannot be themed, so on a dark interface it
+   sits there as a pale strip belonging to a different program. Drawing it here
+   costs one row and follows each platform's own convention: macOS puts its
+   three round buttons on the left, Windows and Linux put square ones on the
+   right, and both drag by the space between. */
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 36px;
+  flex: 0 0 36px;
+  padding: 0 0.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.titlebar-title {
+  flex: 1;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.window-buttons { display: flex; align-items: center; }
+
+.window-button {
+  display: grid;
+  place-items: center;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: default;
+  color: var(--ink-soft);
+}
+.window-button svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.1; }
+
+/* macOS: three 12px discs, coloured, glyphs only on hover over the group. */
+.window-buttons.mac { gap: 8px; padding: 0 6px 0 4px; }
+.window-buttons.mac .window-button {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  color: transparent;
+}
+.window-buttons.mac .close { background: #ff5f57; }
+.window-buttons.mac .minimize { background: #febc2e; }
+.window-buttons.mac .maximize { background: #28c840; }
+.window-buttons.mac:hover .window-button { color: rgba(0, 0, 0, 0.55); }
+.window-buttons.mac .window-button svg { width: 7px; height: 7px; stroke-width: 1.4; }
+.window-buttons.mac .window-button:active { filter: brightness(0.85); }
+
+/* Windows and Linux: 46 by 32 hit areas, close going red. */
+.window-buttons.pc { gap: 0; margin-right: -0.5rem; }
+.window-buttons.pc .window-button {
+  width: 46px;
+  height: 35px;
+}
+.window-buttons.pc .window-button:hover { background: var(--sunk); }
+.window-buttons.pc .close:hover { background: #c42b1c; color: #fff; }
+
+/* Eight-pixel grips, for window managers that give an undecorated window no
+   resize edges of its own. */
+.resize-edges { position: fixed; inset: 0; pointer-events: none; z-index: 400; }
+.resize-edge { position: absolute; pointer-events: auto; }
+.resize-north, .resize-south { left: 8px; right: 8px; height: 6px; cursor: ns-resize; }
+.resize-east, .resize-west { top: 8px; bottom: 8px; width: 6px; cursor: ew-resize; }
+.resize-north { top: 0; }
+.resize-south { bottom: 0; }
+.resize-west { left: 0; }
+.resize-east { right: 0; }
+.resize-northwest, .resize-northeast, .resize-southwest, .resize-southeast {
+  width: 12px; height: 12px;
+}
+.resize-northwest { top: 0; left: 0; cursor: nwse-resize; }
+.resize-northeast { top: 0; right: 0; cursor: nesw-resize; }
+.resize-southwest { bottom: 0; left: 0; cursor: nesw-resize; }
+.resize-southeast { bottom: 0; right: 0; cursor: nwse-resize; }
+
+/* ------------------------------------------------------ working overlay */
+
+.working {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--paper) 76%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.working-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 1.4rem 2rem;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  box-shadow: 0 12px 40px var(--shadow);
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+}
+
+.working-track {
+  width: 190px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--sunk);
+  overflow: hidden;
+}
+
+.working-bar {
+  width: 40%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: working-slide 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes working-slide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(260%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .working-bar { animation: none; width: 100%; }
+}
+
+/* ---------------------------------------------------------- new dialogs */
+
+.modal-ask { max-width: 30rem; }
+.modal-wide { max-width: 34rem; }
+.modal-actions-end { justify-content: flex-end; }
+
+.format-list { display: grid; gap: 0.5rem; }
+
+.format {
+  display: grid;
+  gap: 0.15rem;
+  text-align: left;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+}
+.format:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+.format strong { font-size: 0.9rem; }
+.format em { font-style: normal; font-size: 0.78rem; color: var(--ink-faint); }
+
+.tabs { display: flex; gap: 0.2rem; border-bottom: 1px solid var(--rule); margin-bottom: 0.2rem; }
+
+.tab {
+  border: none;
+  background: none;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.84rem;
+  color: var(--ink-faint);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+.tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+
+.settings-version { margin: 0.4rem 0 0; font-size: 0.78rem; color: var(--ink-faint); }
+
+.settings-panel { display: grid; gap: 0.55rem; max-height: 52vh; overflow-y: auto; padding-right: 0.2rem; }
+
+.update-notes {
+  max-height: 9rem;
+  overflow-y: auto;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius);
+  background: var(--sunk);
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+.update-notes p { margin: 0 0 0.35rem; }
+.update-notes p:last-child { margin-bottom: 0; }
+
+.danger { border-color: var(--flag); color: var(--flag-ink); }
+.danger:hover:not(:disabled) { background: var(--flag-soft); }
+
+.crash-note { margin-top: 0.6rem; font-size: 0.85rem; color: var(--flag-ink); }
+
+.head-field { display: flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--ink-faint); }
+.head-field select { font-size: 0.82rem; }
+
+/* -------------------------------------------------------------- density */
+/* One knob for a 13-inch laptop and a 33-inch monitor: everything is sized in
+   rem from the root, so a single font-size moves the whole interface. */
+
+/* Normal is the browser default, so an existing layout is unchanged; the other
+   two scale every rem in the stylesheet at once. */
+:root[data-density="compact"] { font-size: 14.5px; }
+:root[data-density="normal"] { font-size: 16px; }
+:root[data-density="roomy"] { font-size: 17.5px; }

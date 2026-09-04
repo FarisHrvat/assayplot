@@ -273,7 +273,12 @@ export interface Project {
 }
 
 export const SCHEMA_VERSION = 5;
-export const APP_VERSION = '0.3.1';
+// Injected from package.json at build time. Node's test runner does not run
+// through Vite, so the fallback keeps the suite working; it is never what a
+// build ships.
+declare const __APP_VERSION__: string;
+export const APP_VERSION =
+  typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.0.0-dev';
 
 let counter = 0;
 export function newId(prefix: string): string {
@@ -566,7 +571,18 @@ export interface AnalysisResult {
   error: string | null;
 }
 
-function formatNumber(value: unknown, digits = 4): string {
+/**
+ * Display precision. Set from the preferences rather than imported from them,
+ * so this module stays free of the interface and the analyses stay pure
+ * functions of their inputs — only the rendering of a number changes.
+ */
+const display = { decimals: 4, exactPValues: false, figureWidth: 520, figureHeight: 380, palette: 'assayplot' };
+
+export function setDisplayPreferences(next: Partial<typeof display>): void {
+  Object.assign(display, next);
+}
+
+function formatNumber(value: unknown, digits = display.decimals): string {
   if (typeof value === 'number' && value === Infinity) return '∞';
   if (typeof value === 'number' && value === -Infinity) return '−∞';
   if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
@@ -577,8 +593,11 @@ function formatNumber(value: unknown, digits = 4): string {
 
 export function formatP(p: unknown): string {
   if (typeof p !== 'number' || !Number.isFinite(p)) return '—';
-  if (p < 0.0001) return '< 0.0001';
-  return p.toFixed(4);
+  if (p >= 0.0001) return p.toFixed(Math.max(4, display.decimals));
+  if (!display.exactPValues) return '< 0.0001';
+  // Past the smallest normal double there is no number left to show, so the
+  // threshold comes back rather than printing a zero that is not one.
+  return p > 0 ? p.toExponential(2) : '< 1e-300';
 }
 
 export function significanceStars(p: number): string {
@@ -1757,7 +1776,7 @@ function computeAnalysis(table: DataTable, analysis: Analysis): AnalysisResult {
           pValue: raw.pValue,
           summary: [
             { label: 'P value', value: formatP(raw.pValue), note: 'two-sided, exact' },
-            { label: 'Odds ratio', value: formatNumber(raw.oddsRatioSample), note: 'cross-product, as Prism reports' },
+            { label: 'Odds ratio', value: formatNumber(raw.oddsRatioSample), note: 'cross-product' },
             { label: 'Odds ratio (cMLE)', value: formatNumber(raw.oddsRatioConditional), note: 'conditional MLE, as R reports' },
           ],
         };
@@ -2220,7 +2239,7 @@ export function defaultStyle(overrides: Partial<FigureStyle> = {}): FigureStyle 
     title: '',
     xLabel: '',
     yLabel: '',
-    palette: 'assayplot',
+    palette: display.palette,
     seriesColors: {},
     errorBars: 'sd',
     showPoints: true,
@@ -2234,8 +2253,8 @@ export function defaultStyle(overrides: Partial<FigureStyle> = {}): FigureStyle 
     xMax: null,
     logY: false,
     logX: false,
-    width: 520,
-    height: 380,
+    width: display.figureWidth,
+    height: display.figureHeight,
     pointSize: 4,
     fontSize: 13,
     barWidth: 0.55,

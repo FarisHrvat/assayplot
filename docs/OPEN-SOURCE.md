@@ -37,8 +37,8 @@ cannot check it.
 
 Fully open, AGPL-3.0, which is what it already is.
 
-The reasoning: the whole point is that a lab can use this instead of paying for
-Prism. A licence that restricts use undercuts that. And because it runs locally,
+The reasoning: the whole point is that a lab can do this work without paying a
+licence fee. A licence that restricts use undercuts that. And because it runs locally,
 AGPL costs you almost nothing — the network clause only bites if someone runs a
 modified copy as a hosted service, and then they must publish their changes.
 That is exactly the outcome you want.

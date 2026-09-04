@@ -1,7 +1,7 @@
 # AssayPlot
 
-Statistics and publication figures for the lab. An open alternative to GraphPad
-Prism, for people who would rather not write code.
+Free, open-source statistics and publication figures for the lab, for people
+who would rather not write code.
 
 It runs on your machine. There is no account, no cloud, and no subscription, and
 your data never leaves the computer.
@@ -170,5 +170,3 @@ fixture proving it against R, and a bug fix needs a test that fails without it.
 every statistical method are listed in
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
-GraphPad and Prism are trademarks of GraphPad Software, LLC. AssayPlot is not
-affiliated with them.

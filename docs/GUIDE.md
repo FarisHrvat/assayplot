@@ -214,7 +214,7 @@ of the figure and never appears in an export.
 
 ## Saving and recovering work
 
-**Save project** writes one `.assayplot` file with your data, analyses, figures,
+**Save project** writes one `.asp` file with your data, analyses, figures,
 and layouts. It is an ordinary ZIP of readable JSON — you can unzip it and read
 your numbers without AssayPlot installed.
 

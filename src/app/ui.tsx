@@ -27,12 +27,18 @@ import {
 } from './model.ts';
 import {
   analysisById, markSaved, resultFor, startAutosave, tableById, useStore,
-  type Problem, type Selection,
+  type Problem, type Question, type Selection,
 } from './store.ts';
 import { useTheme, type Theme } from './theme.ts';
-import { useSettings } from './settings.ts';
+import { defaultSettings, useSettings } from './settings.ts';
 import { METHOD_HELP, SHAPE_HELP } from './help.ts';
 import { buildReport, reportToHtml, reportToMarkdown } from './report.ts';
+import { reportToPdf } from './reportpdf.ts';
+import {
+  checkForUpdate, downloadUpdate, installUpdate, isDesktop, isMac, openExternal,
+  openFile, openNewWindow, quitApp, safeName, saveFile, windowControls,
+  type Update,
+} from './desktop.ts';
 import {
   forgetSettings, loadSettings, normalisePageId, runningInDesktop, saveSettings,
   sendToNotion, type NotionSettings,
@@ -45,6 +51,9 @@ import {
 import {
   IMPORT_EXTENSIONS,
   PAGE_SIZES,
+  PROJECT_EXTENSION,
+  PROJECT_EXTENSIONS,
+  PROJECT_FILTER,
   describeFormat,
   deserializeProject,
   download,
@@ -58,7 +67,7 @@ import {
   type PageSize,
 } from './io.ts';
 
-interface BoundaryState { error: Error | null }
+interface BoundaryState { error: Error | null; note: string | null }
 
 /**
  * A rendering fault must never cost someone their data. The boundary keeps the
@@ -66,10 +75,10 @@ interface BoundaryState { error: Error | null }
  * a bug in one figure cannot take an afternoon's work with it.
  */
 export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, BoundaryState> {
-  state: BoundaryState = { error: null };
+  state: BoundaryState = { error: null, note: null };
 
   static getDerivedStateFromError(error: Error): BoundaryState {
-    return { error };
+    return { error, note: null };
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
@@ -91,14 +100,15 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
             try {
               const project = useStore.getState().project;
               const bytes = new Uint8Array(serializeProject(project)).slice().buffer;
-              const safe = project.name.replace(/[^\w\-. ]+/g, '_').trim() || 'recovered';
-              download(`${safe}-recovered.assayplot`, bytes, 'application/zip');
+              saveFile(`${safeName(project.name, 'recovered')}-recovered.${PROJECT_EXTENSION}`,
+                new Uint8Array(bytes), 'application/zip', PROJECT_FILTER);
             } catch {
-              alert('The project could not be packaged. Reload and use the autosaved copy.');
+              this.setState({ note: 'The project could not be packaged. Reload and use the autosaved copy, which is written separately.' });
             }
           }}>Download my project</button>
           <button onClick={() => window.location.reload()}>Reload AssayPlot</button>
         </div>
+        {this.state.note && <p className="crash-note">{this.state.note}</p>}
         <details>
           <summary>Technical detail</summary>
           <pre>{this.state.error.stack ?? String(this.state.error)}</pre>
@@ -132,7 +142,358 @@ function ProblemPanel({ problem, onDismiss }: { problem: Problem; onDismiss: () 
   );
 }
 
-export function App() {
+/**
+ * A question, asked in the page rather than by the webview. Tauri blocks
+ * window.confirm, so a native confirm() returns false without showing
+ * anything: the button it guarded looked broken, which is exactly how the
+ * close buttons behaved.
+ *
+ * Escape and the backdrop both answer null, which always means "do nothing".
+ */
+/**
+ * Writes the project where the user chooses. Module level rather than inside a
+ * component: closing a table offers to save first, and that button lives in
+ * the navigator, not the toolbar.
+ *
+ * Resolves false when the user backed out of the save dialog, so a caller can
+ * abandon whatever it was going to do next.
+ */
+export async function saveProject(): Promise<boolean> {
+  const store = useStore.getState();
+  try {
+    const bytes = serializeProject(store.project);
+    const written = await saveFile(
+      `${safeName(store.project.name, 'project')}.${PROJECT_EXTENSION}`,
+      bytes,
+      'application/zip',
+      PROJECT_FILTER
+    );
+    if (!written) return false;
+    markSaved();
+    store.notify(`Saved as ${written.split(/[/\\]/).pop()}.`);
+    return true;
+  } catch (error) {
+    store.reportProblem({
+      title: 'The project could not be saved',
+      detail: error instanceof Error ? error.message : 'The file could not be written.',
+      done: 'Nothing. Your work is still open and unchanged.',
+      notDone: 'No file was written, so nothing was overwritten either.',
+      fix: [
+        'Choose a folder you can write to — a synced folder that is still uploading can refuse a write.',
+        'Check there is free space on the disk.',
+        'Your work is also autosaved in this app, so it survives a crash even if this never succeeds.',
+      ],
+    });
+    return false;
+  }
+}
+
+/** The report, in whichever of the three formats suits where it is going. */
+function ReportDialog({ busy, onExport, onClose }: {
+  busy: boolean;
+  onExport: (format: 'md' | 'html' | 'pdf') => void;
+  onClose: () => void;
+}) {
+  const formats: { id: 'pdf' | 'html' | 'md'; label: string; note: string }[] = [
+    { id: 'pdf', label: 'PDF', note: 'For a supplement or an email. Text stays selectable and searchable.' },
+    { id: 'html', label: 'Web page', note: 'One self-contained file. Opens in any browser.' },
+    { id: 'md', label: 'Markdown', note: 'Plain text. Paste straight into Notion, a wiki, or a doc.' },
+  ];
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
+      <div className="modal" role="dialog" aria-modal="true" aria-label="Export the report">
+        <h2>Export the report</h2>
+        <p className="modal-lede">
+          Every analysis with its result and methods sentence, and a SHA-256 of each data
+          table beside the analyses that used it.
+        </p>
+        <div className="format-list">
+          {formats.map((format) => (
+            <button key={format.id} className="format" disabled={busy} onClick={() => onExport(format.id)}>
+              <strong>{format.label}</strong>
+              <em>{format.note}</em>
+            </button>
+          ))}
+        </div>
+        <div className="modal-actions modal-actions-end">
+          <button onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The window's own title bar, drawn by the app.
+ *
+ * The native one is off because it cannot be themed and looks like a different
+ * program sitting on top of this one. Platform convention still applies:
+ * macOS puts its three round buttons on the left, Windows and Linux put square
+ * ones on the right, and everyone drags by the empty space between.
+ */
+function TitleBar({ title }: { title: string }) {
+  const [maximized, setMaximized] = useState(false);
+  const mac = isMac();
+
+  useEffect(() => {
+    let cancelled = false;
+    const sync = () => windowControls.isMaximized().then((value) => {
+      if (!cancelled) setMaximized(value);
+    }).catch(() => {});
+    sync();
+    window.addEventListener('resize', sync);
+    return () => { cancelled = true; window.removeEventListener('resize', sync); };
+  }, []);
+
+  const buttons = (
+    <div className={`window-buttons ${mac ? 'mac' : 'pc'}`}>
+      <button className="window-button minimize" aria-label="Minimise"
+        onClick={() => windowControls.minimize()}>
+        <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5h8" /></svg>
+      </button>
+      <button className="window-button maximize" aria-label={maximized ? 'Restore' : 'Maximise'}
+        onClick={() => windowControls.toggleMaximize().then(() => setMaximized((was) => !was))}>
+        <svg viewBox="0 0 10 10" aria-hidden="true">
+          {maximized
+            ? <path d="M2.5 3.5h4v4h-4z M3.5 3.5V2.5h4v4h-1" />
+            : <path d="M2 2h6v6H2z" />}
+        </svg>
+      </button>
+      <button className="window-button close" aria-label="Close"
+        onClick={() => windowControls.close()}>
+        <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" /></svg>
+      </button>
+    </div>
+  );
+
+  return (
+    <div className={`titlebar ${mac ? 'mac' : 'pc'}`} data-tauri-drag-region
+      onDoubleClick={() => windowControls.toggleMaximize().then(() => setMaximized((was) => !was))}>
+      {mac && buttons}
+      <span className="titlebar-title" data-tauri-drag-region>{title}</span>
+      {!mac && buttons}
+    </div>
+  );
+}
+
+/**
+ * Resize grips for window managers that give an undecorated window none of its
+ * own. Eight pixels wide, transparent, and outside the layout.
+ */
+function ResizeEdges() {
+  const edges = [
+    'North', 'South', 'East', 'West',
+    'NorthEast', 'NorthWest', 'SouthEast', 'SouthWest',
+  ];
+  return (
+    <div className="resize-edges" aria-hidden="true">
+      {edges.map((edge) => (
+        <div key={edge} className={`resize-edge resize-${edge.toLowerCase()}`}
+          onMouseDown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            windowControls.startResize(edge).catch(() => {});
+          }} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Shown while something takes long enough to notice. A 300 ms delay before it
+ * appears keeps it from flashing on work that was quick anyway.
+ */
+function WorkingOverlay({ label }: { label: string }) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(true), 300);
+    return () => clearTimeout(timer);
+  }, [label]);
+  if (!visible) return null;
+
+  return (
+    <div className="working" role="status" aria-live="polite">
+      <div className="working-card">
+        <div className="working-track"><div className="working-bar" /></div>
+        <span>{label}</span>
+      </div>
+    </div>
+  );
+}
+
+const megabytes = (bytes: number) =>
+  bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+/**
+ * Offers the newer release. What happens after the download differs by
+ * platform, so the dialog says which before anything is downloaded rather than
+ * leaving a file in Downloads and no explanation.
+ */
+function UpdateDialog({ update, onClose }: { update: Update; onClose: (skip: boolean) => void }) {
+  const [stage, setStage] = useState<'offer' | 'downloading' | 'ready' | 'failed'>('offer');
+  const [detail, setDetail] = useState('');
+  const notify = useStore((s) => s.notify);
+
+  const start = async () => {
+    setStage('downloading');
+    try {
+      const path = await downloadUpdate(update);
+      setDetail(path);
+      setStage('ready');
+      const mustQuit = await installUpdate(path);
+      if (mustQuit) {
+        notify('The installer is running. AssayPlot will close.');
+        setTimeout(() => quitApp(), 1200);
+      }
+    } catch (error) {
+      setDetail(error instanceof Error ? error.message : String(error));
+      setStage('failed');
+    }
+  };
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal" role="dialog" aria-modal="true" aria-label="Update available">
+        <h2>AssayPlot {update.version} is available</h2>
+        <p className="modal-lede">You are running {update.current}.</p>
+
+        {stage === 'offer' && (
+          <>
+            {update.notes && (
+              <div className="update-notes">
+                {update.notes.split('\n').filter(Boolean).slice(0, 8).map((line, index) => (
+                  <p key={index}>{line.replace(/^[-*#\s]+/, '')}</p>
+                ))}
+              </div>
+            )}
+            <p className="modal-note">{update.instruction}</p>
+            <p className="modal-note">
+              {update.filename} · {megabytes(update.bytes)}. Your projects and settings are untouched.
+            </p>
+            <div className="modal-actions modal-actions-end">
+              <button onClick={() => openExternal(update.page)}>Release notes</button>
+              <button onClick={() => onClose(true)}>Skip this version</button>
+              <button onClick={() => onClose(false)}>Later</button>
+              <button className="primary" onClick={start}>Download and install</button>
+            </div>
+          </>
+        )}
+
+        {stage === 'downloading' && (
+          <>
+            <div className="working-track"><div className="working-bar" /></div>
+            <p className="modal-note">Downloading {update.filename} ({megabytes(update.bytes)}).</p>
+          </>
+        )}
+
+        {stage === 'ready' && (
+          <>
+            <p className="modal-lede">Downloaded to {detail}.</p>
+            <p className="modal-note">{update.instruction}</p>
+            <div className="modal-actions modal-actions-end">
+              <button className="primary" onClick={() => onClose(false)}>Done</button>
+            </div>
+          </>
+        )}
+
+        {stage === 'failed' && (
+          <>
+            <p className="modal-lede">The update could not be downloaded.</p>
+            <p className="modal-note">{detail}</p>
+            <p className="modal-note">
+              Nothing was changed — the version you are running is untouched. You can download
+              it by hand from the release page instead.
+            </p>
+            <div className="modal-actions modal-actions-end">
+              <button onClick={() => openExternal(update.page)}>Open the release page</button>
+              <button className="primary" onClick={() => onClose(false)}>Close</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const SKIPPED_KEY = 'assayplot.update.skipped';
+
+/** Checks once per launch, a moment after the interface settles. */
+function useUpdateCheck(enabled: boolean) {
+  const [update, setUpdate] = useState<Update | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !isDesktop()) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      checkForUpdate()
+        .then((found) => {
+          if (cancelled || !found) return;
+          let skipped: string | null = null;
+          try { skipped = localStorage.getItem(SKIPPED_KEY); } catch { /* not remembered */ }
+          if (skipped === found.version) return;
+          setUpdate(found);
+        })
+        // A failed check is not worth interrupting anyone over: they did not
+        // ask, and the app works regardless.
+        .catch(() => {});
+    }, 2500);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [enabled]);
+
+  const dismiss = (skip: boolean) => {
+    if (skip && update) {
+      try { localStorage.setItem(SKIPPED_KEY, update.version); } catch { /* not remembered */ }
+    }
+    setUpdate(null);
+  };
+
+  return [update, dismiss] as const;
+}
+
+function QuestionDialog({ question, onAnswer }: { question: Question; onAnswer: (choice: string | null) => void }) {
+  const first = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    first.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onAnswer(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [question.id, onAnswer]);
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onAnswer(null);
+    }}>
+      <div className="modal modal-ask" role="alertdialog" aria-modal="true" aria-label={question.title}>
+        <h2>{question.title}</h2>
+        {question.detail && <p className="modal-lede">{question.detail}</p>}
+        {question.points && question.points.length > 0 && (
+          <ul className="modal-steps">
+            {question.points.map((point) => <li key={point}>{point}</li>)}
+          </ul>
+        )}
+        <div className="modal-actions modal-actions-end">
+          <button onClick={() => onAnswer(null)}>Cancel</button>
+          {question.choices.map((choice, index) => (
+            <button key={choice.id}
+              ref={index === 0 ? first : undefined}
+              className={choice.tone === 'primary' ? 'primary' : choice.tone === 'danger' ? 'danger' : ''}
+              onClick={() => onAnswer(choice.id)}>
+              {choice.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function App({ onReady }: { onReady?: () => void } = {}) {
   const selection = useStore((s) => s.selection);
   const toast = useStore((s) => s.toast);
   const notify = useStore((s) => s.notify);
@@ -140,6 +501,18 @@ export function App() {
   const redo = useStore((s) => s.redo);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
+  const question = useStore((s) => s.question);
+  const answer = useStore((s) => s.answer);
+  const projectName = useStore((s) => s.project.name);
+  const working = useStore((s) => s.working);
+  const [settings] = useSettings();
+  const [update, dismissUpdate] = useUpdateCheck(settings.checkForUpdates);
+
+  // Two frames after the first render: one to paint, one to be sure it landed.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => requestAnimationFrame(() => onReady?.()));
+    return () => cancelAnimationFrame(raf);
+  }, [onReady]);
   const [recovery, setRecovery] = useState<Snapshot | null>(null);
   const problem = useStore((s) => s.problem);
   const dismissProblem = useStore((s) => s.dismissProblem);
@@ -185,8 +558,10 @@ export function App() {
   }, [undo, redo]);
 
   return (
-    <div className="app">
+    <div className={`app ${isDesktop() ? 'framed' : ''}`}>
       <a className="skip-link" href="#stage">Skip to the current view</a>
+      {isDesktop() && <TitleBar title={projectName ? `${projectName} — AssayPlot` : 'AssayPlot'} />}
+      {isDesktop() && <ResizeEdges />}
       {recovery && (
         <div className="recovery" role="alert">
           <span>
@@ -206,6 +581,9 @@ export function App() {
       )}
       <Toolbar canUndo={canUndo} canRedo={canRedo} />
       {problem && <ProblemPanel problem={problem} onDismiss={dismissProblem} />}
+      {question && <QuestionDialog question={question} onAnswer={answer} />}
+      {working && <WorkingOverlay label={working} />}
+      {update && <UpdateDialog update={update} onClose={dismissUpdate} />}
       <div className="body">
         <Navigator />
         <main className="stage" id="stage" tabIndex={-1}>
@@ -237,27 +615,69 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
   const [busy, setBusy] = useState(false);
   const [notionOpen, setNotionOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const ask = useStore((s) => s.ask);
+  const setWorking = useStore((s) => s.setWorking);
 
   const openRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
-  const save = () => {
-    // Copy into a plain ArrayBuffer so the Blob constructor accepts it.
-    const bytes = new Uint8Array(serializeProject(project)).slice().buffer;
-    const safe = project.name.replace(/[^\w\-. ]+/g, '_').trim() || 'project';
-    download(`${safe}.assayplot`, bytes, 'application/zip');
-    markSaved();
-    notify('Project saved.');
+  const save = () => saveProject();
+
+  const openProject = async () => {
+    if (!isDesktop()) { openRef.current?.click(); return; }
+    const picked = await openFile(PROJECT_FILTER);
+    if (!picked) return;
+    open(new File([new Uint8Array(picked.bytes).slice().buffer], picked.name));
   };
 
   const newProject = () => {
-    if (dirty && !confirm('Start a new project? Unsaved changes in this one will be lost.')) return;
-    replaceProject(emptyProject());
-    notify('New project started.');
+    // A second project belongs in a second window: closing this one to make
+    // room for it is not what "New" means anywhere else.
+    openNewWindow().then((opened) => {
+      if (opened) { notify('New window opened.'); return; }
+      ask({
+        title: 'Start a new project here?',
+        detail: 'A second window could not be opened, so this one would be reused.',
+        points: dirty ? ['This project has changes you have not saved to a file.'] : [],
+        choices: dirty
+          ? [
+              { id: 'save', label: 'Save project first', tone: 'primary' },
+              { id: 'discard', label: 'Discard and start new', tone: 'danger' },
+            ]
+          : [{ id: 'discard', label: 'Start new', tone: 'primary' }],
+        onAnswer: async (choice) => {
+          if (!choice) return;
+          if (choice === 'save' && !(await saveProject())) return;
+          replaceProject(emptyProject());
+          notify('New project started.');
+        },
+      });
+    });
   };
 
   const open = async (file: File) => {
-    if (dirty && !confirm('Open this project? Unsaved changes in the current one will be lost.')) return;
+    if (dirty) {
+      const proceed = await new Promise<boolean>((resolve) => {
+        ask({
+          title: `Open “${file.name}”?`,
+          detail: 'This project has changes you have not saved to a file.',
+          choices: [
+            { id: 'save', label: 'Save this one first', tone: 'primary' },
+            { id: 'discard', label: 'Discard and open', tone: 'danger' },
+          ],
+          onAnswer: async (choice) => {
+            if (choice === 'save') { resolve(await saveProject()); return; }
+            resolve(choice === 'discard');
+          },
+        });
+      });
+      if (!proceed) return;
+    }
+
+    setWorking(`Opening ${file.name}`);
+    // One frame, so the overlay is on screen before the parse blocks the thread.
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       replaceProject(deserializeProject(bytes));
@@ -269,11 +689,13 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
         done: 'Nothing. Your current project is untouched.',
         notDone: 'The file was not opened.',
         fix: [
-          'Check this is a .assayplot file and not a spreadsheet — use Import data for those.',
+          `Check this is a .${PROJECT_EXTENSION} project and not a spreadsheet — use Import data for those.`,
           'A project is an ordinary ZIP archive: if you can unzip it and see a manifest.json, the file is intact and this is a bug worth reporting.',
           'If it came from a much newer version of AssayPlot, update first.',
         ],
       });
+    } finally {
+      setWorking(null);
     }
   };
 
@@ -318,18 +740,25 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
     notify(`Imported ${added.join(', ')}.`);
   };
 
-  const exportReport = async (format: 'md' | 'html') => {
+  const exportReport = async (format: 'md' | 'html' | 'pdf') => {
     setBusy(true);
+    setWorking('Building the report');
     try {
       const report = await buildReport(useStore.getState().project);
-      const safe = project.name.replace(/[^\w\-. ]+/g, '_').trim() || 'report';
-      if (format === 'md') {
-        download(`${safe}-report.md`, reportToMarkdown(report), 'text/markdown');
-        notify('Report exported as Markdown. Paste it straight into Notion or a doc.');
-      } else {
-        download(`${safe}-report.html`, reportToHtml(report), 'text/html');
-        notify('Report exported. Open it in a browser, or print it to PDF.');
-      }
+      const base = `${safeName(project.name, 'report')}-report`;
+
+      const written =
+        format === 'md'
+          ? await saveFile(`${base}.md`, reportToMarkdown(report), 'text/markdown',
+              [{ name: 'Markdown', extensions: ['md'] }])
+        : format === 'html'
+          ? await saveFile(`${base}.html`, reportToHtml(report), 'text/html',
+              [{ name: 'Web page', extensions: ['html'] }])
+          : await saveFile(`${base}.pdf`, reportToPdf(report), 'application/pdf',
+              [{ name: 'PDF', extensions: ['pdf'] }]);
+
+      if (!written) { notify(null); return; }
+      notify(`Report saved as ${written.split(/[/\\]/).pop()}.`);
     } catch (error) {
       reportProblem({
         title: 'The report could not be generated',
@@ -340,6 +769,7 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
       });
     } finally {
       setBusy(false);
+      setWorking(null);
     }
   };
 
@@ -364,13 +794,10 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
         <button onClick={() => importRef.current?.click()} title={`Accepts ${IMPORT_EXTENSIONS.join(', ')}`}>
           Import data
         </button>
-        <button onClick={() => openRef.current?.click()}>Open</button>
-        <button disabled={busy} onClick={() => exportReport('html')}
+        <button onClick={openProject}>Open</button>
+        <button disabled={busy} onClick={() => setReportOpen(true)}
           title="A report of every analysis, with a checksum of the data each one used">
           Report
-        </button>
-        <button disabled={busy} onClick={() => exportReport('md')} title="The same report as Markdown">
-          .md
         </button>
         <button onClick={() => setNotionOpen(true)} title="Send the report to a page in your Notion workspace">
           Notion
@@ -381,10 +808,18 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
         <ThemeToggle theme={theme} onChange={setTheme} />
       </div>
 
+      {reportOpen && (
+        <ReportDialog
+          busy={busy}
+          onExport={(format) => { setReportOpen(false); exportReport(format); }}
+          onClose={() => setReportOpen(false)}
+        />
+      )}
       {notionOpen && <NotionDialog onClose={() => setNotionOpen(false)} />}
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
 
-      <input ref={openRef} type="file" accept=".assayplot,.zip,.json" hidden
+      <input ref={openRef} type="file"
+        accept={[...PROJECT_EXTENSIONS.map((extension) => `.${extension}`), '.zip', '.json'].join(',')} hidden
         onChange={(event) => {
           const file = event.target.files?.[0];
           if (file) open(file);
@@ -409,6 +844,9 @@ function Navigator() {
   const addLayout = useStore((s) => s.addLayout);
   const deleteNode = useStore((s) => s.deleteNode);
   const notify = useStore((s) => s.notify);
+  const ask = useStore((s) => s.ask);
+  const dirty = useStore((s) => s.dirty);
+  const [settings] = useSettings();
 
   const activeTableId =
     selection.kind === 'table'
@@ -418,17 +856,41 @@ function Navigator() {
         : project.figures.find((figure) => figure.id === selection.id)?.tableId ?? project.tables[0]?.id;
 
   const remove = (kind: Selection['kind'], id: string, name: string) => {
+    const points: string[] = [];
     if (kind === 'table') {
       const analyses = project.analyses.filter((analysis) => analysis.tableId === id).length;
       const figures = project.figures.filter((figure) => figure.tableId === id).length;
-      const attached = analyses + figures;
-      const detail = attached
-        ? `\n\nThis also closes ${analyses} analysis${analyses === 1 ? '' : 'es'} and ${figures} figure${figures === 1 ? '' : 's'} built on it.`
-        : '';
-      if (!confirm(`Close "${name}"?${detail}`)) return;
-    } else if (!confirm(`Delete "${name}"?`)) return;
-    deleteNode(kind, id);
-    notify(`Closed ${name}.`);
+      if (analyses) points.push(`${analyses} analysis${analyses === 1 ? '' : 'es'} built on it also close.`);
+      if (figures) points.push(`${figures} figure${figures === 1 ? '' : 's'} built on it also close.`);
+    }
+    if (dirty) points.push('This project has changes you have not saved to a file yet.');
+
+    const done = () => {
+      deleteNode(kind, id);
+      notify(`Closed ${name}. Undo brings it back.`);
+    };
+
+    // Nothing is destroyed that undo cannot bring back, so with the warning
+    // turned off and nothing else depending on it, just close it.
+    if (!settings.confirmClose && !points.length) { done(); return; }
+
+    ask({
+      title: `Close “${name}”?`,
+      detail: dirty
+        ? 'Saving writes the whole project, including this, to a file first.'
+        : 'It is removed from this project. Undo brings it back.',
+      points,
+      choices: dirty
+        ? [
+            { id: 'save', label: 'Save project, then close', tone: 'primary' },
+            { id: 'close', label: 'Close without saving', tone: 'danger' },
+          ]
+        : [{ id: 'close', label: 'Close', tone: 'danger' }],
+      onAnswer: (choice) => {
+        if (choice === 'save') { saveProject().then(done); return; }
+        if (choice === 'close') done();
+      },
+    });
   };
 
   const Item = ({ kind, id, name, badge }: { kind: Selection['kind']; id: string; name: string; badge?: string }) => (
@@ -493,7 +955,6 @@ function Navigator() {
 
       <div className="nav-foot">
         <span>AssayPlot {APP_VERSION}</span>
-        <span className="nav-foot-note">Offline. Nothing leaves this machine.</span>
       </div>
     </nav>
   );
@@ -660,42 +1121,181 @@ function ResizeHandle({ width, height, onResize }: {
 
 function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [settings, update] = useSettings();
+  const [tab, setTab] = useState<'figures' | 'results' | 'app'>('figures');
+
+  const Hint = ({ children }: { children: React.ReactNode }) => (
+    <p className="modal-hint">{children}</p>
+  );
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" role="dialog" aria-label="Preferences" onClick={(event) => event.stopPropagation()}>
+    <div className="modal-backdrop" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
+      <div className="modal modal-wide" role="dialog" aria-label="Preferences">
         <h2>Preferences</h2>
 
-        <label className="check">
-          <input type="checkbox" checked={settings.colourBlindSafe}
-            onChange={(event) => update({ colourBlindSafe: event.target.checked })} />
-          Colour-blind safe figures
-        </label>
-        <p className="modal-hint">
-          Gives every series its own marker shape as well as its own colour, and
-          uses a palette that stays distinct under the common forms of
-          colour-vision deficiency. Shape is the part that matters: about one man
-          in twelve cannot reliably separate red from green, and no palette fixes
-          a figure that encodes meaning in hue alone.
-        </p>
+        <div className="tabs" role="tablist">
+          {([
+            ['figures', 'Figures'],
+            ['results', 'Results'],
+            ['app', 'Application'],
+          ] as const).map(([id, label]) => (
+            <button key={id} role="tab" aria-selected={tab === id}
+              className={tab === id ? 'tab active' : 'tab'}
+              onClick={() => setTab(id)}>{label}</button>
+          ))}
+        </div>
 
-        <label className="field">
-          <span>How hard to work the machine</span>
-          <select value={settings.effort}
-            onChange={(event) => update({ effort: event.target.value as typeof settings.effort })}>
-            <option value="light">Light — leave the machine free</option>
-            <option value="balanced">Balanced — the default</option>
-            <option value="thorough">Thorough — exact tests on larger samples</option>
-          </select>
-        </label>
-        <p className="modal-hint">
-          Sets how far an exact test will enumerate before falling back to an
-          approximation, scaled to the number of processors this machine
-          reports. AssayPlot never takes the whole machine: the interface still
-          has to draw, and a frozen window reads as a crash.
-        </p>
+        {tab === 'figures' && (
+          <div className="settings-panel">
+            <label className="check">
+              <input type="checkbox" checked={settings.colourBlindSafe}
+                onChange={(event) => update({ colourBlindSafe: event.target.checked })} />
+              Colour-blind safe figures
+            </label>
+            <Hint>
+              Gives every series its own marker shape as well as its own colour, and uses a
+              palette that stays distinct under the common forms of colour-vision deficiency.
+              Shape is the part that matters: about one man in twelve cannot reliably separate
+              red from green, and no palette fixes a figure that encodes meaning in hue alone.
+            </Hint>
+
+            <label className="field">
+              <span>Palette for new figures</span>
+              <select value={settings.palette}
+                onChange={(event) => update({ palette: event.target.value })}>
+                {Object.keys(PALETTES).map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </label>
+
+            <div className="field-row">
+              <label className="field">
+                <span>Default width</span>
+                <input type="number" min={200} max={2000} step={10} value={settings.figureWidth}
+                  onChange={(event) => update({ figureWidth: Number(event.target.value) || 520 })} />
+              </label>
+              <label className="field">
+                <span>Default height</span>
+                <input type="number" min={150} max={2000} step={10} value={settings.figureHeight}
+                  onChange={(event) => update({ figureHeight: Number(event.target.value) || 380 })} />
+              </label>
+            </div>
+            <Hint>
+              In points, which is what a journal asks for. A single-column figure is usually
+              about 240 points wide, a double-column one about 500.
+            </Hint>
+
+            <label className="field">
+              <span>Export resolution</span>
+              <select value={settings.exportDpi}
+                onChange={(event) => update({ exportDpi: Number(event.target.value) })}>
+                <option value={150}>150 DPI — for a draft or a slide</option>
+                <option value={300}>300 DPI — what most journals ask for</option>
+                <option value={600}>600 DPI — line art, or a large reproduction</option>
+                <option value={1200}>1200 DPI</option>
+              </select>
+            </label>
+            <Hint>The starting value in the export dialog. SVG has no resolution and ignores it.</Hint>
+          </div>
+        )}
+
+        {tab === 'results' && (
+          <div className="settings-panel">
+            <label className="field">
+              <span>Decimal places</span>
+              <select value={settings.decimals}
+                onChange={(event) => update({ decimals: Number(event.target.value) })}>
+                {[2, 3, 4, 5, 6].map((places) => (
+                  <option key={places} value={places}>{places}</option>
+                ))}
+              </select>
+            </label>
+            <Hint>
+              Affects what is shown, never what is computed or stored. Reported precision is a
+              claim about your measurement, so choose it for the assay rather than the screen.
+            </Hint>
+
+            <label className="check">
+              <input type="checkbox" checked={settings.exactPValues}
+                onChange={(event) => update({ exactPValues: event.target.checked })} />
+              Show exact p-values instead of “&lt; 0.0001”
+            </label>
+            <Hint>
+              A threshold hides how far past it a result sits, and more journals now ask for the
+              number. Below about 1e-300 there is no number left to show and the threshold
+              returns.
+            </Hint>
+
+            <label className="field">
+              <span>How hard to work the machine</span>
+              <select value={settings.effort}
+                onChange={(event) => update({ effort: event.target.value as typeof settings.effort })}>
+                <option value="light">Light — leave the machine free</option>
+                <option value="balanced">Balanced — the default</option>
+                <option value="thorough">Thorough — exact tests on larger samples</option>
+              </select>
+            </label>
+            <Hint>
+              Sets how far an exact test will enumerate before falling back to an approximation,
+              scaled to the number of processors this machine reports. AssayPlot never takes the
+              whole machine: the interface still has to draw, and a frozen window reads as a crash.
+            </Hint>
+          </div>
+        )}
+
+        {tab === 'app' && (
+          <div className="settings-panel">
+            <label className="field">
+              <span>Interface density</span>
+              <select value={settings.density}
+                onChange={(event) => update({ density: event.target.value as typeof settings.density })}>
+                <option value="compact">Compact — fits more on a 13-inch screen</option>
+                <option value="normal">Normal</option>
+                <option value="roomy">Roomy — larger text and targets</option>
+              </select>
+            </label>
+
+            <label className="field">
+              <span>Autosave every</span>
+              <select value={settings.autosaveMinutes}
+                onChange={(event) => update({ autosaveMinutes: Number(event.target.value) })}>
+                <option value={0.5}>30 seconds</option>
+                <option value={1}>1 minute</option>
+                <option value={5}>5 minutes</option>
+                <option value={15}>15 minutes</option>
+              </select>
+            </label>
+            <Hint>
+              Autosave keeps a copy inside the application so a crash costs nothing. It is not a
+              substitute for saving a project file, which is the copy you can move, back up and
+              send to someone.
+            </Hint>
+
+            <label className="check">
+              <input type="checkbox" checked={settings.confirmClose}
+                onChange={(event) => update({ confirmClose: event.target.checked })} />
+              Ask before closing a table that has work built on it
+            </label>
+
+            <label className="check">
+              <input type="checkbox" checked={settings.checkForUpdates}
+                onChange={(event) => update({ checkForUpdates: event.target.checked })} />
+              Check for a new version when AssayPlot starts
+            </label>
+            <Hint>
+              Asks GitHub which release is newest, once per launch. Nothing is downloaded and
+              nothing is installed without you saying so, and no information about you or your
+              data is sent.
+            </Hint>
+
+            <p className="settings-version">AssayPlot {APP_VERSION}</p>
+          </div>
+        )}
 
         <div className="modal-actions">
+          <button onClick={() => update(defaultSettings())}>Reset to defaults</button>
           <span className="modal-spacer" />
           <button className="primary" onClick={onClose}>Done</button>
         </div>
@@ -712,7 +1312,8 @@ function ExportDialog({ name, getNode, beforeExport, onClose }: {
 }) {
   const notify = useStore((s) => s.notify);
   const reportProblem = useStore((s) => s.reportProblem);
-  const [dpi, setDpi] = useState(300);
+  const [settings] = useSettings();
+  const [dpi, setDpi] = useState(settings.exportDpi);
   const [page, setPage] = useState<PageSize>('fit');
   const [busy, setBusy] = useState(false);
 
@@ -722,15 +1323,25 @@ function ExportDialog({ name, getNode, beforeExport, onClose }: {
     if (!node) return;
     setBusy(true);
     try {
-      if (format === 'svg') {
-        download(`${name}.svg`, svgSource(node), 'image/svg+xml');
-        notify('SVG exported. Text stays editable in Illustrator.');
-      } else if (format === 'png') {
-        download(`${name}-${dpi}dpi.png`, await svgToPng(node, dpi), 'image/png');
-        notify(`PNG exported at ${dpi} DPI.`);
-      } else {
-        download(`${name}.pdf`, await svgToPdf(node, dpi, page), 'application/pdf');
-        notify('PDF exported.');
+      const written =
+        format === 'svg'
+          ? await saveFile(`${name}.svg`, svgSource(node), 'image/svg+xml',
+              [{ name: 'SVG image', extensions: ['svg'] }])
+        : format === 'png'
+          ? await saveFile(`${name}-${dpi}dpi.png`,
+              new Uint8Array(await (await svgToPng(node, dpi)).arrayBuffer()), 'image/png',
+              [{ name: 'PNG image', extensions: ['png'] }])
+          : await saveFile(`${name}.pdf`,
+              new Uint8Array(await (await svgToPdf(node, dpi, page)).arrayBuffer()), 'application/pdf',
+              [{ name: 'PDF', extensions: ['pdf'] }]);
+
+      if (written) {
+        const where = written.split(/[/\\]/).pop();
+        notify(
+          format === 'svg' ? `Saved ${where}. Text stays editable in Illustrator.`
+          : format === 'png' ? `Saved ${where} at ${dpi} DPI.`
+          : `Saved ${where}.`
+        );
       }
       onClose();
     } catch (error) {
@@ -1071,7 +1682,10 @@ function TableView({ id }: { id: string }) {
         </select>
         <button onClick={() => addAnalysis(table.id)}>Analyse</button>
         <button onClick={() => addFigure(table.id)}>Graph</button>
-        <button onClick={() => download(`${table.name}.csv`, tableToCsv(table), 'text/csv')}>Export CSV</button>
+        <button onClick={() => saveFile(
+          `${safeName(table.name, 'table')}.csv`, tableToCsv(table), 'text/csv',
+          [{ name: 'Comma separated values', extensions: ['csv'] }]
+        )}>Export CSV</button>
       </ViewHead>
 
       <p className="hint">
@@ -1243,8 +1857,17 @@ function AnalysisView({ id }: { id: string }) {
 
   return (
     <div className="view">
-      <ViewHead eyebrow={`Analysis · from ${table.name}`} title={analysis.name}
+      <ViewHead eyebrow="Analysis" title={analysis.name}
         onRename={(name) => renameNode('analysis', analysis.id, name)}>
+        <label className="head-field">
+          <span>Data table</span>
+          <select value={analysis.tableId}
+            onChange={(event) => updateAnalysis(analysis.id, { tableId: event.target.value })}>
+            {project.tables.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
+            ))}
+          </select>
+        </label>
         <button onClick={() => select({ kind: 'table', id: table.id })}>Open data</button>
       </ViewHead>
 

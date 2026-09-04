@@ -2,7 +2,7 @@
 //
 //   npm run examples
 //
-// Each one is a real .assayplot file: open it from the toolbar and everything
+// Each one is a real .asp project: open it from the toolbar and everything
 // is already wired up. They double as end-to-end fixtures, since generating
 // them exercises the document model and the file format.
 
@@ -62,7 +62,7 @@ function write(fileName, doc, note) {
       grid: 'none', pointSize: 5, logX: true,
     }),
   };
-  write('dose-response.assayplot',
+  write('dose-response.asp',
     project('Dose response', [data], [fit], [figure]),
     'A four-parameter logistic fit with the EC50 read off it.');
 }
@@ -96,7 +96,7 @@ function write(fileName, doc, note) {
   };
   const layout = { ...makeLayout('Figure 1', [bar.id, spread.id, qq.id]), columns: 3 };
 
-  write('cell-viability.assayplot',
+  write('cell-viability.asp',
     project('Cell viability', [data], [anova, normality, variance], [bar, spread, qq], [layout]),
     'One-way ANOVA with Tukey HSD, the assumption checks that belong with it, and a three-panel figure.');
 }
@@ -126,7 +126,7 @@ function write(fileName, doc, note) {
       grid: 'horizontal',
     }),
   };
-  write('survival.assayplot',
+  write('survival.asp',
     project('Xenograft survival', [data], [analysis], [figure]),
     'Kaplan–Meier curves with censoring, compared by the log-rank test.');
 }
@@ -149,7 +149,7 @@ function write(fileName, doc, note) {
     ...makeFigure('Response by sex and dose', data.id, 'bar'),
     style: defaultStyle({ title: 'Response by dose', yLabel: 'Response (a.u.)', grid: 'horizontal' }),
   };
-  write('two-factors.assayplot',
+  write('two-factors.asp',
     project('Sex by dose', [data], [analysis], [figure]),
     'Two-way ANOVA with replication, from a table laid out the way it is recorded.');
 }
@@ -173,7 +173,7 @@ function write(fileName, doc, note) {
       grid: 'horizontal', errorBars: 'none',
     }),
   };
-  write('paired-design.assayplot',
+  write('paired-design.asp',
     project('Paired treatment', [data], [paired], [figure]),
     'A paired t-test with each subject drawn as its own line.');
 }

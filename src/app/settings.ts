@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 // @ts-ignore - the statistics core is plain JS.
 import { setMaxEnumerations } from '../core/exact.js';
+import { setDisplayPreferences } from './model.ts';
 
 export interface Settings {
   /**
@@ -16,6 +17,28 @@ export interface Settings {
    * still has to draw, and a frozen interface reads as a crash.
    */
   effort: 'light' | 'balanced' | 'thorough';
+  /** Ask GitHub for a newer release once per launch. */
+  checkForUpdates: boolean;
+  /** Decimal places shown in results. The stored numbers keep full precision. */
+  decimals: number;
+  /**
+   * Show exact p-values rather than "< 0.0001". Journals increasingly ask for
+   * the number, and a threshold hides how far past it a result is.
+   */
+  exactPValues: boolean;
+  /** Default DPI offered in the export dialog. */
+  exportDpi: number;
+  /** Default palette for new figures. */
+  palette: string;
+  /** Default width and height, in points, for a new figure. */
+  figureWidth: number;
+  figureHeight: number;
+  /** Warn before closing a table that analyses or figures are built on. */
+  confirmClose: boolean;
+  /** Minutes between autosaves. */
+  autosaveMinutes: number;
+  /** Interface scale, for a 13-inch laptop or a 33-inch monitor. */
+  density: 'compact' | 'normal' | 'roomy';
 }
 
 const KEY = 'assayplot.settings';
@@ -23,7 +46,20 @@ const KEY = 'assayplot.settings';
 const DEFAULTS: Settings = {
   colourBlindSafe: false,
   effort: 'balanced',
+  checkForUpdates: true,
+  decimals: 4,
+  exactPValues: false,
+  exportDpi: 300,
+  palette: 'assayplot',
+  figureWidth: 520,
+  figureHeight: 380,
+  confirmClose: true,
+  autosaveMinutes: 1,
+  density: 'normal',
 };
+
+/** A fresh copy of the defaults, for the reset button. */
+export const defaultSettings = (): Settings => ({ ...DEFAULTS });
 
 export function loadSettings(): Settings {
   try {
@@ -53,7 +89,25 @@ export function setSettings(next: Settings) {
   current = next;
   store(next);
   setMaxEnumerations(budget().enumerations);
+  applyDisplay(next);
+  applyDensity(next.density);
   listeners.forEach((listener) => listener(next));
+}
+
+function applyDisplay(settings: Settings) {
+  setDisplayPreferences({
+    decimals: settings.decimals,
+    exactPValues: settings.exactPValues,
+    figureWidth: settings.figureWidth,
+    figureHeight: settings.figureHeight,
+    palette: settings.palette,
+  });
+}
+
+/** Density is a root attribute so the stylesheet can scale everything at once. */
+export function applyDensity(density: Settings['density']) {
+  if (typeof document === 'undefined') return;
+  document.documentElement.setAttribute('data-density', density);
 }
 
 export function useSettings(): [Settings, (patch: Partial<Settings>) => void] {
@@ -87,3 +141,5 @@ export function budget(): { enumerations: number; pointsPerSeries: number } {
 
 // Apply whatever was remembered from the last session.
 setMaxEnumerations(budget().enumerations);
+applyDisplay(current);
+applyDensity(current.density);

@@ -21,6 +21,7 @@
   "license": "AGPL-3.0-or-later",
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
+    "@types/node": "^26.4.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^5.2.0",
@@ -29,7 +30,11 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/plugin-fs": "^2.5.2",
     "@tauri-apps/plugin-http": "^2.6.0",
+    "@tauri-apps/plugin-opener": "^2.5.5",
+    "@tauri-apps/plugin-process": "^2.3.1",
     "fflate": "^0.8.3",
     "immer": "^11.1.18",
     "react": "^19.2.8",
