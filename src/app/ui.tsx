@@ -143,12 +143,10 @@ function ProblemPanel({ problem, onDismiss }: { problem: Problem; onDismiss: () 
 }
 
 /**
- * A question, asked in the page rather than by the webview. Tauri blocks
- * window.confirm, so a native confirm() returns false without showing
- * anything: the button it guarded looked broken, which is exactly how the
- * close buttons behaved.
+ * Asks in the page, because Tauri blocks window.confirm: a native confirm()
+ * returns false without showing anything, and the button looks broken.
  *
- * Escape and the backdrop both answer null, which always means "do nothing".
+ * Escape and the backdrop answer null, meaning do nothing.
  */
 /**
  * Writes the project where the user chooses. Module level rather than inside a
@@ -1653,7 +1651,7 @@ function TableView({ id }: { id: string }) {
    * window and waiting for React to commit when the row does not exist yet
    * (pressing Enter on the last row adds one).
    *
-   * Retries on a timer rather than requestAnimationFrame, which is throttled
+   * Retries on a timer, not requestAnimationFrame, which is throttled
    * in a background tab.
    */
   const focusCell = (row: number, column: number, attempt = 0) => {

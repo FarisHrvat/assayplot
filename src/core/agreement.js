@@ -5,9 +5,8 @@ import { mean, variance, clean, studentTCdf, studentTQuantile } from './stats.js
 import { normalCdf, chiSquareUpperTail } from './diagnostics.js';
 
 /**
- * McNemar's test: paired binary outcomes, such as the same subjects tested
- * before and after. Only the discordant pairs carry information — the ones who
- * changed — so b and c are all the statistic uses.
+ * McNemar's test: paired binary outcomes, same subjects before and after.
+ * Only the discordant pairs carry information, so b and c are all it uses.
  *
  * The table is [[a, b], [c, d]]: a agree positive, d agree negative, b and c
  * are the two ways of disagreeing.
@@ -64,10 +63,9 @@ export function mcnemarTest(table, { correct = true } = {}) {
 }
 
 /**
- * Cohen's kappa: how far two raters agree beyond what chance would give. Raw
- * agreement is misleading when one category dominates — two raters who both
- * say "negative" ninety per cent of the time agree ninety per cent of the time
- * knowing nothing.
+ * Cohen's kappa: agreement beyond chance. Raw agreement misleads when one
+ * category dominates. Two raters who both say "negative" nine times in ten
+ * agree nine times in ten knowing nothing.
  *
  * `weights` may be 'unweighted', 'linear' or 'quadratic'; the weighted forms
  * are for ordered categories, where being one category out matters less than
@@ -224,9 +222,9 @@ function assembleTost(difference, standardError, df, bound, method, n) {
 }
 
 /**
- * Bland-Altman: how two ways of measuring the same thing disagree across the
- * range. A correlation between two methods only says they rank subjects alike,
- * which is not the question when one is meant to replace the other.
+ * Bland-Altman: how two measurement methods disagree across the range.
+ * Correlation only says they rank subjects alike. That is a different question
+ * when one method is meant to replace the other.
  */
 export function blandAltman(methodA, methodB) {
   const a = clean(methodA);
@@ -416,7 +414,7 @@ export function cochranQ(effects, standardErrors) {
 /**
  * The resource equation: a rough check on animal numbers when no effect size is
  * available to power against. The residual degrees of freedom should land
- * between 10 and 20 — fewer and the experiment cannot detect anything, more and
+ * between 10 and 20. Fewer and the experiment cannot detect anything, more and
  * animals are being used without gain.
  */
 export function resourceEquation({ groups, perGroup }) {

@@ -108,9 +108,9 @@ function lgamma(z) {
 /**
  * Upper-tail p-value for an observed studentized range statistic.
  *
- * Computed as 1 - CDF. Once the CDF saturates against 1 in double precision the
- * subtraction loses the leading digits, so far-tail values carry roughly three
- * significant figures rather than full precision -- raising the quadrature
+ * Computed as 1 - CDF. Once the CDF saturates against 1 the subtraction loses
+ * the leading digits, so far-tail values carry about three significant
+ * figures. Raising the quadrature
  * resolution does not help, because the loss is in the subtraction, not the
  * integral. That is far more precision than a reported p-value needs.
  *

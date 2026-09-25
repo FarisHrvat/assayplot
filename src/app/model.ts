@@ -28,10 +28,8 @@ export type Cell = number | string | null;
 export type ColumnRole = 'group' | 'x' | 'y' | 'label' | 'time' | 'event' | 'ignore';
 
 /**
- * Table shapes, following the way experiments are actually laid out rather than
- * a normalised long format. In `column` shape each column is one treatment
- * group and each row is a replicate — the layout a bench scientist already has
- * in their notebook.
+ * Table shapes. Laid out the way experiments are recorded, not normalised: in
+ * `column` shape each column is a treatment and each row a replicate.
  */
 export type TableShape = 'column' | 'xy' | 'grouped' | 'survival';
 
@@ -237,11 +235,7 @@ export interface FigureStyle {
   barWidth: number;
   /** Histogram / density resolution. */
   bins: number;
-  /**
-   * Points singled out, as "columnId:rowIndex". A ringed point is how you say
-   * "this is the one" about a replicate that matters — the clone that behaved,
-   * the animal that did not.
-   */
+  /** Singled-out points, keyed "columnId:rowIndex". Drawn with a ring. */
   highlights: string[];
   /** What to write above each point, if anything. */
   pointLabels: 'none' | 'value' | 'row' | 'highlighted';

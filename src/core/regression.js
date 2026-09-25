@@ -257,9 +257,9 @@ export function logisticRegression(predictors, outcome, names = []) {
 }
 
 /**
- * Poisson regression for counts. Coefficients are on the log scale and their
- * exponentials are rate ratios. An offset carries exposure — person-years, or
- * area surveyed — so the model describes a rate rather than a raw count.
+ * Poisson regression for counts. Coefficients are on the log scale; their
+ * exponentials are rate ratios. An offset carries exposure (person-years, area
+ * surveyed) and turns the model into one for a rate.
  */
 export function poissonRegression(predictors, counts, names = [], { exposure = null } = {}) {
   const y = counts.map(Number);
@@ -356,8 +356,8 @@ export function ancova(groups, covariates) {
   const groupEffect = fTest(withoutGroup, k - 1);
   const covariateEffect = fTest(withoutCovariate, 1);
 
-  // Means adjusted to the overall covariate mean, which is what makes ANCOVA
-  // worth doing: the groups compared as if every subject shared a covariate.
+  // Adjusted to the overall covariate mean: the groups compared as if every
+  // subject had the same covariate value.
   const grandCovariate = mean(covariate);
   const slope = full.beta[1];
   const adjustedMeans = groups.map((values, index) => {
@@ -392,7 +392,7 @@ export function ancova(groups, covariates) {
 
 /**
  * Cox proportional hazards, fitted by Newton-Raphson on Efron's partial
- * likelihood — the tie handling R uses by default.
+ * likelihood, the tie handling R uses by default.
  *
  * `rows` are { time, event, x: number[] }.
  */

@@ -80,9 +80,8 @@ export function symmetricEigen(input, tolerance = 1e-14, maxSweeps = 100) {
 /**
  * Principal components of a matrix of observations.
  *
- * `scale` divides each column by its standard deviation, which is what you want
- * whenever the columns are in different units: without it the component with
- * the largest numbers wins regardless of what it means.
+ * `scale` divides each column by its standard deviation. Needed whenever the
+ * columns are in different units, or the largest numbers dominate.
  *
  * Eigenvector signs are arbitrary. They are fixed here so the largest-magnitude
  * loading of each component is positive, which makes a figure reproducible.
@@ -152,7 +151,7 @@ export function pca(rows, { scale = false } = {}) {
     loadings,
     scores,
     means,
-    /** Components whose eigenvalue exceeds the average — the Kaiser rule. */
+    /** Components with an eigenvalue above the average: the Kaiser rule. */
     kaiser: eigenvalues.filter((value) => value > total / p).length,
   };
 }

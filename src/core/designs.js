@@ -65,12 +65,10 @@ function logGamma(z) {
 const chiSquareTail = chiSquareUpperTail;
 
 /**
- * Linear mixed model with one random intercept per subject, fitted by REML.
+ * Linear mixed model, one random intercept per subject, REML.
  *
- * This is the honest replacement for repeated-measures ANOVA: it uses every
- * observation a subject provided instead of discarding the whole subject when
- * one value is missing, and it does not assume the same number of measurements
- * per subject.
+ * Takes the place of repeated-measures ANOVA. Keeps a subject who missed one
+ * measurement, and does not need the same count from everyone.
  *
  * With a single random intercept the covariance has a closed form, so the fit
  * reduces to a one-dimensional search over the variance ratio rather than a
@@ -538,12 +536,11 @@ function medianAbsoluteDeviation(values, centre) {
 }
 
 /**
- * Generalised estimating equations with an exchangeable working correlation.
+ * GEE with an exchangeable working correlation.
  *
- * Answers a different question from a mixed model: the coefficients describe
- * the average change across the population rather than the change within one
- * subject, and the standard errors are the robust sandwich ones, so they stay
- * honest even if the assumed correlation structure is wrong.
+ * Different question from a mixed model: coefficients are population-average,
+ * not within-subject. Sandwich standard errors, so they hold up even when the
+ * assumed correlation is wrong.
  */
 export function gee(predictors, response, clusters, options = {}) {
   const { family = 'gaussian', iterations = 50, tolerance = 1e-10 } = options;
@@ -585,9 +582,8 @@ export function gee(predictors, response, clusters, options = {}) {
     const mu = eta.map(link.mean);
     const pearson = response.map((value, i) => (value - mu[i]) / Math.sqrt(link.variance(mu[i])));
 
-    // Divided by n rather than n - p, which is the convention geepack uses
-    // and the one the working correlation below is defined against. The
-    // sandwich variance is unaffected either way: the dispersion cancels.
+    // n, not n - p: geepack's convention, and what the working correlation
+    // below is defined against. The sandwich cancels it either way.
     dispersion = pearson.reduce((sum, value) => sum + value * value, 0) / n;
 
     // Exchangeable correlation, estimated from the within-cluster products.

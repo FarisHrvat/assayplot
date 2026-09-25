@@ -3,11 +3,9 @@
 //   node scripts/make-icon.mjs
 //   npx tauri icon src-tauri/icons/source.png
 //
-// The mark is the app's own signature figure: three bars of decreasing height
-// with their individual data points above them, which is what a dose-response
-// bar chart looks like and what most people will draw first. Rendered here
-// rather than imported so the icon is reproducible from source with no
-// binary asset and no image toolchain.
+// Three bars of decreasing height with their points above them, which is what
+// most people draw first. Generated rather than checked in, so there is no
+// binary asset and no image toolchain to install.
 
 import { deflateSync } from 'node:zlib';
 import { writeFileSync, mkdirSync } from 'node:fs';

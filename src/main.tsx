@@ -15,10 +15,9 @@ const container = document.getElementById('root');
 if (!container) throw new Error('Missing #root');
 
 /**
- * The splash in index.html covers the real cost of starting: parsing the
- * bundle, restoring the autosave, and painting the first view. It is dismissed
- * from here, after that work is done, rather than on a timer — a fixed delay
- * would be too long on a fast machine and too short on a slow one.
+ * The splash covers parsing the bundle, restoring the autosave and painting
+ * the first view. Dismissed here when that is done, not on a timer: a fixed
+ * delay is too long on a fast machine and too short on a slow one.
  */
 function dismissSplash() {
   const splash = document.getElementById('splash');

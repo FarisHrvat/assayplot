@@ -145,15 +145,14 @@ function initialGuess(x, y) {
 const NAMES = ['bottom', 'top', 'ec50', 'hillSlope'];
 
 /**
- * Fits the curve and reports what each parameter is worth knowing about.
+ * Fits the curve and reports each parameter with its interval.
  *
- * `fixed` pins a parameter instead of estimating it — `{ 3: 1 }` gives the
- * three-parameter model with a Hill slope of 1, which is the usual thing to
- * compare a four-parameter fit against.
+ * `fixed` pins a parameter instead of estimating it. `{ 3: 1 }` gives the
+ * three-parameter model, the usual thing to compare a four-parameter fit to.
  *
  * Intervals are Wald: estimate plus or minus t times the standard error, from
  * the covariance at the optimum. Where the curve is poorly determined they are
- * optimistic — a profile-likelihood interval would be wider and asymmetric —
+ * optimistic; a profile-likelihood interval would be wider and asymmetric,
  * and the result says so when the fit looks that way.
  */
 export function fitDoseResponse(xValues, yValues, { fixed = {}, level = 0.95 } = {}) {
@@ -207,8 +206,8 @@ export function fitDoseResponse(xValues, yValues, { fixed = {}, level = 0.95 } =
       confidenceInterval: Number.isFinite(standardError)
         ? [estimate - t * standardError, estimate + t * standardError]
         : null,
-      // Against zero, which is what nls reports. For EC50 and the Hill slope
-      // that is rarely the question worth asking, so it is not put on screen.
+      // Against zero, as nls reports. Rarely the question for EC50 or the Hill
+      // slope, so it stays off screen.
       pValue: Number.isFinite(statistic) ? 2 * (1 - studentTCdf(Math.abs(statistic), residualDf)) : null,
       fixed: false,
     };
@@ -218,8 +217,8 @@ export function fitDoseResponse(xValues, yValues, { fixed = {}, level = 0.95 } =
   const total = y.reduce((sum, value) => sum + (value - mean) ** 2, 0);
 
   const ec50 = terms[2];
-  // An interval that runs below zero, or spans more than two orders of
-  // magnitude, means the data did not locate the EC50 — worth saying plainly.
+  // An interval below zero, or spanning two orders of magnitude, means these
+  // concentrations did not locate the EC50.
   const interval = ec50.confidenceInterval;
   const poorlyDetermined = !interval || interval[0] <= 0 || interval[1] / Math.max(interval[0], 1e-300) > 100;
 
@@ -348,7 +347,7 @@ function logGamma(z) {
 /**
  * Fits every dataset separately, then again with one EC50 shared between them,
  * and tests whether the shared fit is good enough. This is the question behind
- * "is the curve shifted?" — a potency comparison, not a comparison of means.
+ * "is the curve shifted?". A potency comparison, not a comparison of means.
  */
 export function compareEc50(datasets) {
   if (datasets.length < 2) throw new Error('Comparing potencies needs at least two curves.');

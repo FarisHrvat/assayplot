@@ -1,11 +1,8 @@
-// The analysis report as a PDF with real, selectable text.
+// The report as a PDF with selectable text.
 //
-// Figures go through svgToPdf, which rasterises: line art has to be pixel
-// accurate and there is no text in it to select. A report is the opposite —
-// it is all text, and a reviewer needs to search it and copy from it. So this
-// lays the text out directly and uses Helvetica, one of the fourteen fonts
-// every PDF reader already has, which keeps the file small and needs no font
-// embedding.
+// Figures go through svgToPdf and get rasterised. A report is all text and
+// wants searching and copying, so it is laid out directly here in Helvetica,
+// a base-14 font every reader has. No font embedding, small files.
 
 import type { Report } from './report.ts';
 

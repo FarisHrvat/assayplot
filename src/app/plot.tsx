@@ -1172,10 +1172,9 @@ export function LayoutFigure({
 }
 
 /**
- * Kaplan-Meier step curves, one per group, with censoring ticks. Survival is
- * constant between event times and drops at each one, so the curve is drawn as
- * a staircase rather than interpolated - joining the points with straight lines
- * would imply a smooth decline that the estimator does not claim.
+ * Kaplan-Meier curves with censoring ticks. Drawn as a staircase: survival is
+ * flat between event times, and joining the points would imply a smooth
+ * decline the estimator never claims.
  */
 /**
  * Difference against average, with the bias and the 95% limits of agreement.
@@ -1467,9 +1466,8 @@ function MatrixPlot(props: any) {
         const n = Math.min(series[i].length, series[j].length);
         const a = series[i].slice(0, n);
         const b = series[j].slice(0, n);
-        // Correlation is undefined when either column is constant, which is
-        // common enough in a matrix that it is worth checking rather than
-        // catching.
+        // Undefined for a constant column. Common enough in a matrix to check
+        // up front.
         const defined = n >= 3 && stats.variance(a) > 0 && stats.variance(b) > 0;
         const r = defined ? stats.pearsonCorrelation(a, b).r : NaN;
         cells.push(
@@ -1707,9 +1705,8 @@ function Legend({ items, placement, font, style, onGrab }: any) {
 }
 
 /**
- * Picks the columns a model plot needs: a 0/1 outcome and a numeric predictor.
- * Which column is which is inferred rather than configured, so a figure keeps
- * working when its analysis is deleted.
+ * Finds a 0/1 outcome and a numeric predictor. Inferred, not configured, so the
+ * figure survives its analysis being deleted.
  */
 function binaryOutcomeAndPredictor(table: DataTable) {
   const columns = valueColumns(table);
@@ -1739,9 +1736,8 @@ const columnIndexIn = (table: DataTable, columnId: string) =>
   table.columns.findIndex((column) => column.id === columnId);
 
 /**
- * Observed 0/1 outcomes against a predictor, with the fitted logistic curve
- * through them. The points are nudged off the 0 and 1 lines so that ties are
- * visible rather than stacked into a single mark.
+ * Observed 0/1 outcomes with the fitted curve through them. Points sit just
+ * off the 0 and 1 lines, or ties stack into one mark.
  */
 function LogisticFitPlot(props: any) {
   const { table, figure, plotLeft, plotRight, plotTop, plotBottom, font } = props;

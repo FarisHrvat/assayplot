@@ -559,13 +559,10 @@ export const PAGE_SIZES = {
 export type PageSize = keyof typeof PAGE_SIZES;
 
 /**
- * Writes a PDF containing the figure on a white page.
+ * The figure on a white page.
  *
- * The figure is rasterised at the chosen DPI and embedded losslessly as
- * Flate-compressed RGB, rather than as JPEG, because a figure is line art and
- * JPEG artefacts around thin strokes look like data. Text is not live: a PDF
- * with editable text needs the fonts embedded, which is a much larger job.
- * Export SVG when the text has to stay editable.
+ * Flate RGB, not JPEG: JPEG artefacts around thin strokes look like data.
+ * Text is rasterised too. Export SVG if it needs to stay editable.
  */
 export async function svgToPdf(
   node: SVGSVGElement,

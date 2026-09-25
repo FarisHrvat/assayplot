@@ -601,9 +601,9 @@ let lastWrite = 0;
 let pending: ReturnType<typeof setTimeout> | null = null;
 
 /**
- * Throttled, not debounced. A debounce at fifteen minutes writes nothing until
- * fifteen minutes after the last keystroke, which is not what the setting says.
- * Closing the window flushes regardless.
+ * Throttled, not debounced: at a fifteen-minute setting a debounce would write
+ * nothing until fifteen minutes after the last keystroke. Closing the window
+ * flushes anyway.
  */
 function persist(project: Project, dirty: boolean) {
   const interval = Math.max(800, getSettings().autosaveMinutes * 60_000);

@@ -27,7 +27,7 @@ function openDatabase(): Promise<IDBDatabase> {
 /**
  * The single point where storage failure is handled. A private window, a full
  * disk, or a browser set to block site data all make IndexedDB throw, and none
- * of them should stop the app working — they only cost the safety net.
+ * of them should stop the app working; they only cost the safety net.
  */
 async function withStore<T>(
   mode: IDBTransactionMode,
