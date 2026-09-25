@@ -923,11 +923,9 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 .hint-popover svg { display: block; margin: 0.4rem 0 0; background: #fff; border-radius: 3px; }
 
 /* ------------------------------------------------------- window chrome */
-/* The native title bar is off. It cannot be themed, so on a dark interface it
-   sits there as a pale strip belonging to a different program. Drawing it here
-   costs one row and follows each platform's own convention: macOS puts its
-   three round buttons on the left, Windows and Linux put square ones on the
-   right, and both drag by the space between. */
+/* The native title bar is off because it cannot be themed. Platform convention
+   still applies: macOS puts three round buttons on the left, Windows and Linux
+   square ones on the right, and both drag by the space between. */
 
 .titlebar {
   display: flex;
@@ -953,6 +951,7 @@ input:focus-visible, select:focus-visible, button:focus-visible {
   text-overflow: ellipsis;
   pointer-events: none;
 }
+.titlebar.unfocused .titlebar-title { opacity: 0.55; }
 
 .window-buttons { display: flex; align-items: center; }
 
@@ -964,32 +963,57 @@ input:focus-visible, select:focus-visible, button:focus-visible {
   padding: 0;
   cursor: default;
   color: var(--ink-soft);
+  -webkit-app-region: no-drag;
 }
-.window-button svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.1; }
+.window-button svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  shape-rendering: geometricPrecision;
+}
+.window-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 
-/* macOS: three 12px discs, coloured, glyphs only on hover over the group. */
-.window-buttons.mac { gap: 8px; padding: 0 6px 0 4px; }
+/* macOS: three 12px discs. Glyphs appear on hover over the group, and the set
+   greys out when the window loses focus. */
+.window-buttons.mac { gap: 8px; padding: 0 6px 0 3px; }
 .window-buttons.mac .window-button {
   width: 12px;
   height: 12px;
   border-radius: 50%;
   color: transparent;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.14);
+  transition: filter 100ms ease;
 }
 .window-buttons.mac .close { background: #ff5f57; }
-.window-buttons.mac .minimize { background: #febc2e; }
-.window-buttons.mac .maximize { background: #28c840; }
-.window-buttons.mac:hover .window-button { color: rgba(0, 0, 0, 0.55); }
-.window-buttons.mac .window-button svg { width: 7px; height: 7px; stroke-width: 1.4; }
-.window-buttons.mac .window-button:active { filter: brightness(0.85); }
+.window-buttons.mac .minimise { background: #febc2e; }
+.window-buttons.mac .maximise { background: #28c840; }
+.window-buttons.mac:hover .window-button { color: rgba(0, 0, 0, 0.6); }
+.window-buttons.mac .window-button svg { width: 7px; height: 7px; stroke-width: 1.3; }
+.window-buttons.mac .window-button:active { filter: brightness(0.82); }
+.titlebar.unfocused .window-buttons.mac .window-button {
+  background: var(--rule-strong);
+  box-shadow: none;
+}
 
-/* Windows and Linux: 46 by 32 hit areas, close going red. */
+/* Windows and Linux: 46 by 35 hit areas, the metrics Windows uses. */
 .window-buttons.pc { gap: 0; margin-right: -0.5rem; }
 .window-buttons.pc .window-button {
   width: 46px;
   height: 35px;
+  transition: background 90ms ease, color 90ms ease;
 }
 .window-buttons.pc .window-button:hover { background: var(--sunk); }
+.window-buttons.pc .window-button:active { background: var(--rule); }
 .window-buttons.pc .close:hover { background: #c42b1c; color: #fff; }
+.window-buttons.pc .close:active { background: #b02a1d; color: #fff; }
+.titlebar.unfocused .window-buttons.pc .window-button { color: var(--ink-faint); }
 
 /* Eight-pixel grips, for window managers that give an undecorated window no
    resize edges of its own. */

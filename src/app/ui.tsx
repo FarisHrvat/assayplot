@@ -236,42 +236,78 @@ function ReportDialog({ busy, onExport, onClose }: {
  */
 function TitleBar({ title }: { title: string }) {
   const [maximized, setMaximized] = useState(false);
+  const [focused, setFocused] = useState(true);
   const mac = isMac();
 
   useEffect(() => {
     let cancelled = false;
-    const sync = () => windowControls.isMaximized().then((value) => {
-      if (!cancelled) setMaximized(value);
-    }).catch(() => {});
+    const sync = () => windowControls.isMaximized()
+      .then((value) => { if (!cancelled) setMaximized(value); })
+      .catch(() => {});
     sync();
+
+    const gained = () => setFocused(true);
+    const lost = () => setFocused(false);
     window.addEventListener('resize', sync);
-    return () => { cancelled = true; window.removeEventListener('resize', sync); };
+    window.addEventListener('focus', gained);
+    window.addEventListener('blur', lost);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('resize', sync);
+      window.removeEventListener('focus', gained);
+      window.removeEventListener('blur', lost);
+    };
   }, []);
 
+  const toggle = () => windowControls.toggleMaximize()
+    .then(() => setMaximized((was) => !was))
+    .catch(() => {});
+
+  // Glyphs at 10x10 with a half-pixel offset, so a 1px stroke lands on a pixel
+  // boundary instead of straddling two and going grey.
+  const glyph = {
+    minimise: <line x1="2.5" y1="5.5" x2="7.5" y2="5.5" />,
+    maximise: <rect x="2.5" y="2.5" width="5" height="5" rx="0.5" />,
+    restore: (
+      <>
+        <rect x="2.5" y="4" width="4" height="4" rx="0.5" />
+        <path d="M4.2 4V2.5h4V6.5H6.8" />
+      </>
+    ),
+    close: <path d="M2.6 2.6 7.4 7.4M7.4 2.6 2.6 7.4" />,
+  };
+
+  const close = (
+    <button type="button" className="window-button close" aria-label="Close" title="Close"
+      onClick={() => windowControls.close().catch(() => {})}>
+      <svg viewBox="0 0 10 10" aria-hidden="true">{glyph.close}</svg>
+    </button>
+  );
+  const minimise = (
+    <button type="button" className="window-button minimise" aria-label="Minimise" title="Minimise"
+      onClick={() => windowControls.minimize().catch(() => {})}>
+      <svg viewBox="0 0 10 10" aria-hidden="true">{glyph.minimise}</svg>
+    </button>
+  );
+  const maximise = (
+    <button type="button" className="window-button maximise"
+      aria-label={maximized ? 'Restore' : 'Maximise'} title={maximized ? 'Restore' : 'Maximise'}
+      onClick={toggle}>
+      <svg viewBox="0 0 10 10" aria-hidden="true">{maximized ? glyph.restore : glyph.maximise}</svg>
+    </button>
+  );
+
+  // Order differs by platform: macOS is close, minimise, maximise from the
+  // left; Windows and Linux are minimise, maximise, close from the right.
   const buttons = (
     <div className={`window-buttons ${mac ? 'mac' : 'pc'}`}>
-      <button className="window-button minimize" aria-label="Minimise"
-        onClick={() => windowControls.minimize()}>
-        <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5h8" /></svg>
-      </button>
-      <button className="window-button maximize" aria-label={maximized ? 'Restore' : 'Maximise'}
-        onClick={() => windowControls.toggleMaximize().then(() => setMaximized((was) => !was))}>
-        <svg viewBox="0 0 10 10" aria-hidden="true">
-          {maximized
-            ? <path d="M2.5 3.5h4v4h-4z M3.5 3.5V2.5h4v4h-1" />
-            : <path d="M2 2h6v6H2z" />}
-        </svg>
-      </button>
-      <button className="window-button close" aria-label="Close"
-        onClick={() => windowControls.close()}>
-        <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" /></svg>
-      </button>
+      {mac ? <>{close}{minimise}{maximise}</> : <>{minimise}{maximise}{close}</>}
     </div>
   );
 
   return (
-    <div className={`titlebar ${mac ? 'mac' : 'pc'}`} data-tauri-drag-region
-      onDoubleClick={() => windowControls.toggleMaximize().then(() => setMaximized((was) => !was))}>
+    <div className={`titlebar ${mac ? 'mac' : 'pc'} ${focused ? '' : 'unfocused'}`}
+      data-tauri-drag-region onDoubleClick={toggle}>
       {mac && buttons}
       <span className="titlebar-title" data-tauri-drag-region>{title}</span>
       {!mac && buttons}

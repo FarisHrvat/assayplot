@@ -28,7 +28,8 @@ machine: no account, no cloud, no telemetry, no subscription.
 **[User guide](docs/GUIDE.md)** ·
 **[How the statistics are validated](docs/VALIDATION.md)** ·
 **[Roadmap](docs/ROADMAP.md)** ·
-**[Releasing](docs/RELEASING.md)**
+**[Releasing](docs/RELEASING.md)** ·
+**[Building on GitLab](docs/GITLAB.md)**
 
 ## Building it
 
