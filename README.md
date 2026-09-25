@@ -6,7 +6,8 @@
 
 **Free, open-source statistics and publication figures for the lab.**
 
-[![Release](https://img.shields.io/badge/release-v0.7.1-0C6259)](https://github.com/FarisHrvat/assayplot/releases/latest)
+[![Release](https://img.shields.io/github/v/release/FarisHrvat/assayplot?include_prereleases&sort=semver&label=release&color=0C6259)](https://github.com/FarisHrvat/assayplot/releases/latest)
+[![CI](https://github.com/FarisHrvat/assayplot/actions/workflows/ci.yml/badge.svg)](https://github.com/FarisHrvat/assayplot/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/tests-256%20passing-2e6b36)](docs/VALIDATION.md)
 [![Checked against R](https://img.shields.io/badge/checked%20against%20R-63%20cases-0C6259)](docs/VALIDATION.md)
 [![Licence](https://img.shields.io/badge/licence-AGPL--3.0-6B7A77)](LICENSE)

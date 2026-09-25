@@ -24,19 +24,8 @@ which before releasing. Never commit a hand-edited fixture.
 
 ## Badges
 
-The README and the landing page carry static badges, because shields.io cannot
-read a private repository and a live badge renders as "repo not found" until
-this goes public. Two of them quote numbers, so bump them with the version:
-
-- the release badge in `README.md` and `site/index.html`
-- the test count, if it changed (`npm test` prints it)
-
-The day the repository is public, swap them for the live versions:
-
-```
-https://img.shields.io/github/v/release/FarisHrvat/assayplot?include_prereleases&sort=semver
-https://github.com/FarisHrvat/assayplot/actions/workflows/ci.yml/badge.svg
-```
+The README and the landing page carry live badges from shields.io and the
+Actions badge. They need no maintenance now the repository is public.
 
 ## Version numbers
 
