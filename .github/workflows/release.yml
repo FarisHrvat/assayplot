@@ -138,23 +138,10 @@ jobs:
           files-folder-filter: exe,msi
           files-folder-recurse: true
 
+      # Renames the installers per platform and writes SHA256SUMS.txt.
       - name: Collect artefacts
         shell: bash
-        run: |
-          mkdir -p out
-          BASE="src-tauri/target/${{ matrix.target }}/release/bundle"
-          find "$BASE" \( -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' \
-            -o -name '*.rpm' -o -name '*.msi' -o -name '*-setup.exe' \) \
-            -exec cp {} out/ \;
-          ls -la out/
-
-      - name: Checksums
-        shell: bash
-        run: |
-          cd out
-          if command -v sha256sum >/dev/null; then sha256sum * > SHA256SUMS.txt
-          else shasum -a 256 * > SHA256SUMS.txt; fi
-          cat SHA256SUMS.txt
+        run: bash ci/collect.sh ${{ matrix.target }}
 
       - uses: actions/upload-artifact@v7
         with:
