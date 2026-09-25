@@ -1,6 +1,6 @@
 [package]
 name = "assayplot"
-version = "0.7.0"
+version = "0.7.1"
 description = "Local-first scientific data analysis and graphing"
 authors = ["AssayPlot contributors"]
 edition = "2021"
