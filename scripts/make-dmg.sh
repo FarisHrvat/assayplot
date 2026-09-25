@@ -20,13 +20,17 @@ TARGET="${1:-}"
 if [[ -n "$TARGET" ]]; then
   BUNDLE="$ROOT/src-tauri/target/$TARGET/release/bundle"
   case "$TARGET" in
-    aarch64-*) ARCH="aarch64" ;;
-    x86_64-*)  ARCH="x64" ;;
+    aarch64-*) ARCH="AppleSilicon" ;;
+    x86_64-*)  ARCH="Intel" ;;
     *)         ARCH="$TARGET" ;;
   esac
 else
   BUNDLE="$ROOT/src-tauri/target/release/bundle"
-  ARCH="$(uname -m)"
+  case "$(uname -m)" in
+    arm64)  ARCH="AppleSilicon" ;;
+    x86_64) ARCH="Intel" ;;
+    *)      ARCH="$(uname -m)" ;;
+  esac
 fi
 APP="$BUNDLE/macos/AssayPlot.app"
 
@@ -36,13 +40,26 @@ if [[ ! -d "$APP" ]]; then
 fi
 
 VERSION="$(node -p "require('$ROOT/package.json').version")"
-OUT="$BUNDLE/dmg/AssayPlot_${VERSION}_${ARCH}.dmg"
+OUT="$BUNDLE/dmg/AssayPlot_${VERSION}_macOS_${ARCH}.dmg"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
 echo "Staging AssayPlot ${VERSION} (${ARCH})"
 mkdir -p "$BUNDLE/dmg"
 cp -R "$APP" "$STAGE/"
+
+# Seal the bundle with an ad-hoc signature. Without an identity Tauri skips
+# codesign entirely, which leaves the executable carrying the linker's own
+# ad-hoc signature and the bundle carrying none. macOS reads that mismatch as
+# "code has no resources but signature indicates they must be present" and
+# refuses to launch the app as damaged, with no way for the user to override.
+# Ad-hoc sealing turns that into the ordinary unidentified-developer prompt,
+# which they can allow. A real Developer ID replaces this when one exists.
+if [[ -z "${APPLE_SIGNING_IDENTITY:-}" ]]; then
+  echo "Ad-hoc signing (no Developer ID set)"
+  codesign --force --deep --sign - "$STAGE/AssayPlot.app"
+  codesign --verify --deep --strict "$STAGE/AssayPlot.app"
+fi
 # The drag-to-install target. Without Finder scripting this is a plain symlink,
 # which is exactly what the fancy version creates anyway.
 ln -s /Applications "$STAGE/Applications"

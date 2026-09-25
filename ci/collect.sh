@@ -26,8 +26,31 @@ find "$BUNDLE" -type f \( \
   -name '*.rpm' -o -name '*.msi' -o -name '*-setup.exe' \
 \) -exec cp {} "$ROOT/out/" \;
 
+# Tauri's bundlers each follow their own packaging convention, so the files
+# come out as AssayPlot-0.7.1-1.x86_64.rpm next to AssayPlot_0.7.1_amd64.deb.
+# Nobody downloading can tell which one is for their machine. Rename them to
+# say the machine and, for Linux, the distributions the package suits.
 cd "$ROOT/out"
+VERSION="$(node -p "require('$ROOT/package.json').version")"
+
+rename_to() {
+  local from="$1" to="$2"
+  [[ -e "$from" && "$from" != "$to" ]] && mv -f "$from" "$to"
+  return 0
+}
+
 shopt -s nullglob
+for f in *; do
+  case "$f" in
+    *.dmg|SHA256SUMS.txt) ;;                         # already named by make-dmg.sh
+    *-setup.exe) rename_to "$f" "AssayPlot_${VERSION}_Windows_x64_setup.exe" ;;
+    *.msi)       rename_to "$f" "AssayPlot_${VERSION}_Windows_x64.msi" ;;
+    *.AppImage)  rename_to "$f" "AssayPlot_${VERSION}_Linux_x64.AppImage" ;;
+    *.deb)       rename_to "$f" "AssayPlot_${VERSION}_Linux_Debian-Ubuntu_x64.deb" ;;
+    *.rpm)       rename_to "$f" "AssayPlot_${VERSION}_Linux_Fedora-RHEL_x64.rpm" ;;
+  esac
+done
+
 files=(*)
 # The checksum file is written here; it must not be one of its own inputs.
 files=("${files[@]/SHA256SUMS.txt}")

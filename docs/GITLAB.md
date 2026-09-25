@@ -77,8 +77,16 @@ under **Deploy → Releases** with the same files attached.
 
 Nothing is signed yet, so each system objects the first time.
 
-- **macOS** — right-click the app, choose Open, then Open again. Or
-  `xattr -dr com.apple.quarantine /Applications/AssayPlot.app`.
+- **macOS** — the first launch says AssayPlot "cannot be opened because Apple
+  cannot check it for malicious software". Go to **System Settings → Privacy &
+  Security**, scroll to Security, and press **Open Anyway** next to the message
+  about AssayPlot. The right-click-then-Open trick stopped working in macOS 15.
+
+  From a terminal instead:
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/AssayPlot.app
+  ```
 - **Windows** — SmartScreen says "Windows protected your PC": More info, then
   Run anyway.
 - **Linux** — `chmod +x` the AppImage, or `sudo dpkg -i` the `.deb`.

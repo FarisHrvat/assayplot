@@ -32,6 +32,28 @@ machine: no account, no cloud, no telemetry, no subscription.
 **[Releasing](docs/RELEASING.md)** ·
 **[Building on GitLab](docs/GITLAB.md)**
 
+## Downloads
+
+| Your machine | File |
+|---|---|
+| Mac with Apple Silicon (M1 and later) | `AssayPlot_x.y.z_macOS_AppleSilicon.dmg` |
+| Mac with an Intel processor | `AssayPlot_x.y.z_macOS_Intel.dmg` |
+| Windows | `AssayPlot_x.y.z_Windows_x64_setup.exe` |
+| Debian, Ubuntu, Mint | `AssayPlot_x.y.z_Linux_Debian-Ubuntu_x64.deb` |
+| Fedora, RHEL, openSUSE | `AssayPlot_x.y.z_Linux_Fedora-RHEL_x64.rpm` |
+| Any other Linux | `AssayPlot_x.y.z_Linux_x64.AppImage` |
+
+Not sure which Mac you have? Apple menu → About This Mac. "Apple M1/M2/M3/M4"
+means Apple Silicon; "Intel Core" means Intel.
+
+Builds are not signed, so the first launch is blocked:
+
+- **macOS** — **System Settings → Privacy & Security**, scroll to Security, press
+  **Open Anyway**. The right-click-then-Open trick stopped working in macOS 15.
+  Or `xattr -dr com.apple.quarantine /Applications/AssayPlot.app`.
+- **Windows** — SmartScreen: **More info**, then **Run anyway**.
+- **Linux** — `chmod +x` the AppImage, or `sudo dpkg -i` the `.deb`.
+
 ## Building it
 
 Only needed to change the code.
