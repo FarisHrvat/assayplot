@@ -31,7 +31,9 @@ find "$BUNDLE" -type f \( \
 # Nobody downloading can tell which one is for their machine. Rename them to
 # say the machine and, for Linux, the distributions the package suits.
 cd "$ROOT/out"
-VERSION="$(node -p "require('$ROOT/package.json').version")"
+# Read with sed, not node: on Windows this runs under Git Bash, where node
+# gets a POSIX path it cannot resolve.
+VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/package.json" | head -1)"
 
 rename_to() {
   local from="$1" to="$2"

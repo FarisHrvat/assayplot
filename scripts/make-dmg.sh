@@ -39,7 +39,7 @@ if [[ ! -d "$APP" ]]; then
   exit 1
 fi
 
-VERSION="$(node -p "require('$ROOT/package.json').version")"
+VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/package.json" | head -1)"
 OUT="$BUNDLE/dmg/AssayPlot_${VERSION}_macOS_${ARCH}.dmg"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
