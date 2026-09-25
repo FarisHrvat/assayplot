@@ -28,7 +28,9 @@ find "$BUNDLE" -type f \( \
 # Tauri names each format its own way (AssayPlot-0.7.1-1.x86_64.rpm,
 # AssayPlot_0.7.1_amd64.deb). Rename them to say which machine they're for.
 cd "$ROOT/out"
-VERSION="$(node -p "require('$ROOT/package.json').version")"
+# Read with sed, not node: on Windows this runs under Git Bash, where node
+# gets a POSIX path it cannot resolve.
+VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/package.json" | head -1)"
 
 rename_to() {
   local from="$1" to="$2"
