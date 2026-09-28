@@ -169,16 +169,24 @@ jobs:
           name: AssayPlot ${{ github.event.inputs.tag || github.ref_name }}
           files: release/*
           body: |
-            ## Installing
+            ## Which file
 
-            These builds are **not code-signed**, so your system will warn you
-            on first launch.
+            | Your machine | File |
+            |---|---|
+            | Mac with Apple Silicon (M1 and later) | `macOS_AppleSilicon_aarch64.dmg` |
+            | Mac with an Intel processor | `macOS_Intel_x64.dmg` |
+            | Windows | `Windows_x64-setup.exe` |
+            | Debian, Ubuntu, Mint | `Linux_Debian-Ubuntu_x64.deb` |
+            | Fedora, RHEL, openSUSE | `Linux_Fedora-RHEL_x64.rpm` |
+            | Any other Linux | `Linux_x64.AppImage` |
 
-            - **macOS** — right-click the app and choose *Open*, then *Open*
-              again. Apple Silicon and Intel builds are separate; take the one
-              matching your Mac.
-            - **Windows** — SmartScreen shows "Windows protected your PC".
-              Choose *More info* → *Run anyway*.
-            - **Linux** — `chmod +x` the AppImage, or install the `.deb`.
+            ## Opening it the first time
 
-            Verify your download against `SHA256SUMS.txt`.
+            The builds aren't signed yet, so the first launch gets blocked.
+
+            - **macOS**: System Settings, Privacy & Security, scroll down, Open Anyway.
+              Right-click then Open stopped working in macOS 15.
+            - **Windows**: at the SmartScreen warning, More info, then Run anyway.
+            - **Linux**: `chmod +x` the AppImage, or install the `.deb`.
+
+            Check a download with `sha256sum -c SHA256SUMS.txt`.
