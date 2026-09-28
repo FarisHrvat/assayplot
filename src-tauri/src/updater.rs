@@ -46,23 +46,29 @@ fn is_newer(candidate: &str, current: &str) -> bool {
 
 /// The asset built for the machine this is running on, and what to do with it.
 fn wanted_asset(name: &str) -> Option<&'static str> {
+    asset_for(name, std::env::consts::OS, std::env::consts::ARCH)
+}
+
+// Split out from wanted_asset so the tests can ask about every platform, not
+// just the one they happen to run on.
+fn asset_for(name: &str, os: &str, arch: &str) -> Option<&'static str> {
     let lower = name.to_ascii_lowercase();
-    if cfg!(target_os = "macos") {
-        let arch = if cfg!(target_arch = "aarch64") { "aarch64" } else { "x64" };
+    if os == "macos" {
+        let arch = if arch == "aarch64" { "aarch64" } else { "x64" };
         if lower.ends_with(".dmg") && lower.contains(arch) {
             return Some(
                 "The disk image opens when the download finishes. Drag AssayPlot onto \
                  Applications and choose Replace when asked.",
             );
         }
-    } else if cfg!(target_os = "windows") {
+    } else if os == "windows" {
         if lower.ends_with("-setup.exe") {
             return Some(
                 "The installer runs when the download finishes. It replaces this version \
                  in place; AssayPlot will close first.",
             );
         }
-    } else if cfg!(target_os = "linux") {
+    } else if os == "linux" {
         if lower.ends_with(".appimage") {
             return Some(
                 "The AppImage is saved to your Downloads folder and marked executable. \
@@ -216,4 +222,47 @@ pub fn install_update(path: String) -> Result<bool, String> {
 
     #[allow(unreachable_code)]
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::asset_for;
+
+    // What ci/collect.sh and make-dmg.sh produce now.
+    const CURRENT: [&str; 7] = [
+        "AssayPlot_0.7.3_macOS_AppleSilicon_aarch64.dmg",
+        "AssayPlot_0.7.3_macOS_Intel_x64.dmg",
+        "AssayPlot_0.7.3_Windows_x64-setup.exe",
+        "AssayPlot_0.7.3_Windows_x64.msi",
+        "AssayPlot_0.7.3_Linux_x64.AppImage",
+        "AssayPlot_0.7.3_Linux_Debian-Ubuntu_x64.deb",
+        "AssayPlot_0.7.3_Linux_Fedora-RHEL_x64.rpm",
+    ];
+
+    fn pick<'a>(names: &[&'a str], os: &str, arch: &str) -> Vec<&'a str> {
+        names.iter().copied().filter(|n| asset_for(n, os, arch).is_some()).collect()
+    }
+
+    #[test]
+    fn each_platform_finds_exactly_its_own_installer() {
+        assert_eq!(pick(&CURRENT, "macos", "aarch64"), ["AssayPlot_0.7.3_macOS_AppleSilicon_aarch64.dmg"]);
+        assert_eq!(pick(&CURRENT, "macos", "x86_64"), ["AssayPlot_0.7.3_macOS_Intel_x64.dmg"]);
+        assert_eq!(pick(&CURRENT, "windows", "x86_64"), ["AssayPlot_0.7.3_Windows_x64-setup.exe"]);
+        assert_eq!(pick(&CURRENT, "linux", "x86_64"), ["AssayPlot_0.7.3_Linux_x64.AppImage"]);
+    }
+
+    // 0.7.2 shipped names this matcher could not see, so nobody on 0.5 to 0.7.1
+    // was offered it. Keep the older names working in case one is ever reused.
+    #[test]
+    fn older_names_still_match() {
+        assert!(asset_for("AssayPlot_0.7.1_aarch64.dmg", "macos", "aarch64").is_some());
+        assert!(asset_for("AssayPlot_0.7.1_x64.dmg", "macos", "x86_64").is_some());
+        assert!(asset_for("AssayPlot_0.7.1_x64-setup.exe", "windows", "x86_64").is_some());
+    }
+
+    #[test]
+    fn the_names_that_broke_0_7_2_do_not_match() {
+        assert!(asset_for("AssayPlot_0.7.2_macOS_AppleSilicon.dmg", "macos", "aarch64").is_none());
+        assert!(asset_for("AssayPlot_0.7.2_Windows_x64_setup.exe", "windows", "x86_64").is_none());
+    }
 }

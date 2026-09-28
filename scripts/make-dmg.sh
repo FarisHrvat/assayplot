@@ -20,15 +20,15 @@ TARGET="${1:-}"
 if [[ -n "$TARGET" ]]; then
   BUNDLE="$ROOT/src-tauri/target/$TARGET/release/bundle"
   case "$TARGET" in
-    aarch64-*) ARCH="AppleSilicon" ;;
-    x86_64-*)  ARCH="Intel" ;;
+    aarch64-*) ARCH="AppleSilicon_aarch64" ;;
+    x86_64-*)  ARCH="Intel_x64" ;;
     *)         ARCH="$TARGET" ;;
   esac
 else
   BUNDLE="$ROOT/src-tauri/target/release/bundle"
   case "$(uname -m)" in
-    arm64)  ARCH="AppleSilicon" ;;
-    x86_64) ARCH="Intel" ;;
+    arm64)  ARCH="AppleSilicon_aarch64" ;;
+    x86_64) ARCH="Intel_x64" ;;
     *)      ARCH="$(uname -m)" ;;
   esac
 fi

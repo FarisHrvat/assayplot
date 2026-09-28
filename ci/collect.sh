@@ -38,11 +38,13 @@ rename_to() {
   return 0
 }
 
+# Keep the arch and the -setup.exe ending: updater.rs matches on them, and so
+# does the copy of it inside every version already installed.
 shopt -s nullglob
 for f in *; do
   case "$f" in
     *.dmg|SHA256SUMS.txt) ;;                         # already named by make-dmg.sh
-    *-setup.exe) rename_to "$f" "AssayPlot_${VERSION}_Windows_x64_setup.exe" ;;
+    *-setup.exe) rename_to "$f" "AssayPlot_${VERSION}_Windows_x64-setup.exe" ;;
     *.msi)       rename_to "$f" "AssayPlot_${VERSION}_Windows_x64.msi" ;;
     *.AppImage)  rename_to "$f" "AssayPlot_${VERSION}_Linux_x64.AppImage" ;;
     *.deb)       rename_to "$f" "AssayPlot_${VERSION}_Linux_Debian-Ubuntu_x64.deb" ;;

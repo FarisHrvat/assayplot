@@ -35,9 +35,9 @@ machine: no account, no cloud, no telemetry, no subscription.
 
 | Your machine | File |
 |---|---|
-| Mac with Apple Silicon (M1 and later) | `AssayPlot_x.y.z_macOS_AppleSilicon.dmg` |
-| Mac with an Intel processor | `AssayPlot_x.y.z_macOS_Intel.dmg` |
-| Windows | `AssayPlot_x.y.z_Windows_x64_setup.exe` |
+| Mac with Apple Silicon (M1 and later) | `AssayPlot_x.y.z_macOS_AppleSilicon_aarch64.dmg` |
+| Mac with an Intel processor | `AssayPlot_x.y.z_macOS_Intel_x64.dmg` |
+| Windows | `AssayPlot_x.y.z_Windows_x64-setup.exe` |
 | Debian, Ubuntu, Mint | `AssayPlot_x.y.z_Linux_Debian-Ubuntu_x64.deb` |
 | Fedora, RHEL, openSUSE | `AssayPlot_x.y.z_Linux_Fedora-RHEL_x64.rpm` |
 | Any other Linux | `AssayPlot_x.y.z_Linux_x64.AppImage` |

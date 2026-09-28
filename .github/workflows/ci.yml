@@ -107,6 +107,9 @@ jobs:
             build-essential curl wget file libssl-dev libgtk-3-dev \
             libayatana-appindicator3-dev
       - run: npm ci
+      - name: Rust tests
+        if: runner.os == 'Linux'
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
       # macOS is packaged by our own script: Tauri's DMG step drives Finder over
       # AppleScript, which no CI runner can satisfy.
       # No signing here, that's release.yml.
