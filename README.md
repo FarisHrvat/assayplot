@@ -13,7 +13,12 @@
 [![Licence](https://img.shields.io/badge/licence-AGPL--3.0-6B7A77)](LICENSE)
 [![Platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-supported-6B7A77)](https://github.com/FarisHrvat/assayplot/releases/latest)
 
-### [→ farishrvat.github.io/assayplot](https://farishrvat.github.io/assayplot/)
+<a href="https://farishrvat.github.io/assayplot/">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/visit-site-dark.svg">
+    <img src="docs/assets/visit-site.svg" alt="Open the website: farishrvat.github.io/assayplot" width="340">
+  </picture>
+</a>
 
 What it does, what it can analyse, how the numbers are checked, and where to
 download it, all on one page.
