@@ -123,6 +123,10 @@ jobs:
         if: runner.os != 'macOS'
         run: npx tauri build --target ${{ matrix.target }}
 
+      - name: Fix AppImage permissions
+        if: runner.os == 'Linux'
+        run: bash ci/fix-appimage.sh ${{ matrix.target }}
+
       - name: Check AppImage permissions
         if: runner.os == 'Linux'
         run: bash ci/check-appimage.sh ${{ matrix.target }}

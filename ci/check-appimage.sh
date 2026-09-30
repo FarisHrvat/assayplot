@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Fails if a file in the AppImage can't be read or run by every user.
-# Tauri 2.11 shipped AppRun.wrapped as 0770, so the app didn't start in
-# sandboxes like firejail or for users other than the owner.
+# Fails if a file in the AppImage can't be read or run by every user, which
+# stops it from starting in sandboxes like firejail or for other users.
 set -euo pipefail
 
 target="$1"
