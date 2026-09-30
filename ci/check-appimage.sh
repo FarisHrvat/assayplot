@@ -10,14 +10,16 @@ if [ -z "$appimage" ]; then
   exit 1
 fi
 
-work=$(mktemp -d)
-cp "$appimage" "$work/app.AppImage"
-chmod +x "$work/app.AppImage"
-(cd "$work" && ./app.AppImage --appimage-extract >/dev/null)
-
-bad=$(find "$work/squashfs-root" \( -type f -o -type d \) \
-  \( ! -perm -o=r -o \( -perm -u=x ! -perm -o=x \) \) -printf '%m %P\n')
-rm -rf "$work"
+chmod +x "$appimage"
+offset=$("$appimage" --appimage-offset)
+bad=$(unsquashfs -lln -o "$offset" "$appimage" | awk '
+  $1 ~ /^[-d]/ {
+    mode = $1
+    others = substr(mode, 8, 3)
+    runnable = substr(mode, 1, 1) == "d" || substr(mode, 4, 1) == "x"
+    if (substr(others, 1, 1) != "r" || (runnable && substr(others, 3, 1) != "x"))
+      print mode, $NF
+  }')
 
 if [ -n "$bad" ]; then
   echo "These files in $(basename "$appimage") are not readable or runnable by everyone:" >&2

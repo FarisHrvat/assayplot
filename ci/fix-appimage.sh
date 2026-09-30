@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tauri 2.12 packs apprun-hooks as 0700, so the AppImage doesn't start in
-# sandboxes like firejail or for other users. Repack it with the same runtime
-# and normal permissions.
+# sandboxes like firejail or for other users. Rebuild its squashfs with normal
+# permissions and put it back behind the original runtime.
 set -euo pipefail
 
 target="$1"
@@ -13,23 +13,16 @@ fi
 appimage=$(realpath "$appimage")
 
 work=$(mktemp -d)
-cd "$work"
-cp "$appimage" app.AppImage
-chmod +x app.AppImage
-./app.AppImage --appimage-extract >/dev/null
-offset=$(./app.AppImage --appimage-offset)
-head -c "$offset" app.AppImage > runtime
-
-chmod -R u+rwX,go+rX,go-w squashfs-root
-
-curl -fsSL -o appimagetool \
-  https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
-chmod +x appimagetool
-ARCH=x86_64 ./appimagetool --appimage-extract-and-run --no-appstream \
-  --runtime-file runtime squashfs-root fixed.AppImage
-
-cp fixed.AppImage "$appimage"
 chmod +x "$appimage"
-cd /
+offset=$("$appimage" --appimage-offset)
+head -c "$offset" "$appimage" > "$work/runtime"
+unsquashfs -q -o "$offset" -d "$work/root" "$appimage" >/dev/null
+
+chmod -R u+rwX,go+rX,go-w "$work/root"
+mksquashfs "$work/root" "$work/fs.squashfs" -root-owned -noappend -no-xattrs \
+  -comp zstd -b 131072 -quiet
+
+cat "$work/runtime" "$work/fs.squashfs" > "$appimage"
+chmod +x "$appimage"
 rm -rf "$work"
 echo "Repacked $(basename "$appimage")"
