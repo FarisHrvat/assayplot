@@ -123,6 +123,10 @@ jobs:
         if: runner.os != 'macOS'
         run: npx tauri build --target ${{ matrix.target }}
 
+      - name: Check AppImage permissions
+        if: runner.os == 'Linux'
+        run: bash ci/check-appimage.sh ${{ matrix.target }}
+
       # Windows certs are hardware-backed now, so no .pfx. Azure Trusted Signing.
       - name: Sign the Windows installers
         if: runner.os == 'Windows' && env.AZURE_CLIENT_ID != ''
