@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security problem
+    url: https://github.com/FarisHrvat/assayplot/security/advisories/new
+    about: Please report vulnerabilities privately, not as a public issue.
+  - name: User guide
+    url: https://farishrvat.github.io/assayplot/
+    about: How to use AssayPlot, what it can analyse and how results are checked.

@@ -1,0 +1,36 @@
+name: Bug report
+description: Something doesn't work or gives a wrong result
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce
+      description: Steps, and a small data file if the problem depends on your data.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: AssayPlot version
+      placeholder: e.g. 0.7.3 (shown in the bottom corner of the app)
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Windows
+        - Linux
+    validations:
+      required: true

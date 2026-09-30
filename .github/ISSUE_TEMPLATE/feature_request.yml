@@ -1,0 +1,21 @@
+name: Feature request
+description: An analysis, plot type or option you'd like to see
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What you want to do
+      description: The analysis or figure you're trying to make, and what's missing or awkward now.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it could work
+      description: Optional. How you picture it in the app, or how another tool does it.
+  - type: textarea
+    id: reference
+    attributes:
+      label: Method or reference
+      description: Optional. For a statistical method, a paper or an R/Python function to check results against.
