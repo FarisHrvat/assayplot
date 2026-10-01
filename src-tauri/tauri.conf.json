@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "AssayPlot",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "identifier": "org.assayplot.assayplot",
   "build": {
     "beforeBuildCommand": "npm run build",
@@ -39,6 +39,49 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "icons/document.ico": "document.ico"
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "asp"
+        ],
+        "name": "AssayPlot.Project",
+        "description": "AssayPlot project",
+        "role": "Editor",
+        "mimeType": "application/x-assayplot"
+      }
+    ],
+    "macOS": {
+      "infoPlist": "Info.plist",
+      "files": {
+        "Resources/document.icns": "icons/document.icns"
+      }
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/hooks.nsh"
+      }
+    },
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/share/mime/packages/assayplot.xml": "linux/assayplot-mime.xml",
+          "/usr/share/icons/hicolor/256x256/mimetypes/application-x-assayplot.png": "icons/document.png"
+        },
+        "postInstallScript": "linux/refresh-mime.sh",
+        "postRemoveScript": "linux/refresh-mime.sh"
+      },
+      "rpm": {
+        "files": {
+          "/usr/share/mime/packages/assayplot.xml": "linux/assayplot-mime.xml",
+          "/usr/share/icons/hicolor/256x256/mimetypes/application-x-assayplot.png": "icons/document.png"
+        },
+        "postInstallScript": "linux/refresh-mime.sh",
+        "postRemoveScript": "linux/refresh-mime.sh"
+      }
+    }
   }
 }

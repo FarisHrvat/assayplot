@@ -20,7 +20,7 @@ body:
     id: version
     attributes:
       label: AssayPlot version
-      placeholder: e.g. 0.7.4 (shown in the bottom corner of the app)
+      placeholder: e.g. 0.7.5 (shown in the bottom corner of the app)
     validations:
       required: true
   - type: dropdown

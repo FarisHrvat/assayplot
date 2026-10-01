@@ -463,7 +463,7 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 /* ------------------------------------------------------------------ toast */
 .toast {
   position: fixed; bottom: 1.1rem; left: 50%; transform: translateX(-50%);
-  background: var(--ink); color: #fff;
+  background: var(--ink); color: var(--paper);
   padding: 0.5rem 1rem; border-radius: var(--radius);
   font-size: 0.85rem; box-shadow: 0 6px 20px var(--shadow);
   z-index: 50;

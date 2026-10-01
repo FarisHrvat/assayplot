@@ -57,22 +57,24 @@ fn asset_for(name: &str, os: &str, arch: &str) -> Option<&'static str> {
         let arch = if arch == "aarch64" { "aarch64" } else { "x64" };
         if lower.ends_with(".dmg") && lower.contains(arch) {
             return Some(
-                "The disk image opens when the download finishes. Drag AssayPlot onto \
-                 Applications and choose Replace when asked.",
+                "AssayPlot replaces itself with the new version and restarts. If it can't \
+                 write to the folder it's in, the disk image opens instead: drag AssayPlot \
+                 onto Applications and choose Replace.",
             );
         }
     } else if os == "windows" {
         if lower.ends_with("-setup.exe") {
             return Some(
-                "The installer runs when the download finishes. It replaces this version \
-                 in place; AssayPlot will close first.",
+                "The installer updates AssayPlot in place and starts it again. AssayPlot \
+                 closes first.",
             );
         }
     } else if os == "linux" {
         if lower.ends_with(".appimage") {
             return Some(
-                "The AppImage is saved to your Downloads folder and marked executable. \
-                 Replace the copy you are running with it.",
+                "The new AppImage replaces the one you're running and AssayPlot restarts. \
+                 If AssayPlot wasn't started from an AppImage, the new one is saved to \
+                 your Downloads folder instead.",
             );
         }
     }
@@ -186,8 +188,8 @@ pub async fn download_update(url: String, filename: String) -> Result<String, St
     Ok(target.to_string_lossy().to_string())
 }
 
-/// Hands the downloaded file to the platform. On Windows the installer takes
-/// over and this process has to stand aside, so the caller exits afterwards.
+/// Installs the downloaded update and starts the new version. Returns true when
+/// this process has to quit so the new one can take over.
 #[tauri::command]
 pub fn install_update(path: String) -> Result<bool, String> {
     let target = PathBuf::from(&path);
@@ -197,7 +199,10 @@ pub fn install_update(path: String) -> Result<bool, String> {
 
     #[cfg(target_os = "windows")]
     {
+        // /P shows only a progress bar, /UPDATE keeps the existing install,
+        // /R starts AssayPlot again when it's done.
         std::process::Command::new(&target)
+            .args(["/P", "/UPDATE", "/R"])
             .spawn()
             .map_err(|error| format!("The installer would not start: {error}"))?;
         return Ok(true);
@@ -205,6 +210,9 @@ pub fn install_update(path: String) -> Result<bool, String> {
 
     #[cfg(target_os = "macos")]
     {
+        if replace_app_bundle(&target).is_ok() {
+            return Ok(true);
+        }
         std::process::Command::new("open")
             .arg(&target)
             .spawn()
@@ -214,7 +222,9 @@ pub fn install_update(path: String) -> Result<bool, String> {
 
     #[cfg(target_os = "linux")]
     {
-        // Show it instead of running it; an AppImage can't replace itself.
+        if replace_appimage(&target).is_ok() {
+            return Ok(true);
+        }
         let parent = target.parent().unwrap_or(&target);
         let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
         return Ok(false);
@@ -222,6 +232,89 @@ pub fn install_update(path: String) -> Result<bool, String> {
 
     #[allow(unreachable_code)]
     Ok(false)
+}
+
+/// Copies the app out of the disk image over the running one and starts it.
+#[cfg(target_os = "macos")]
+fn replace_app_bundle(dmg: &std::path::Path) -> Result<(), String> {
+    use std::process::Command;
+
+    let exe = std::env::current_exe().map_err(|error| error.to_string())?;
+    let bundle = exe
+        .ancestors()
+        .find(|path| path.extension().is_some_and(|ext| ext == "app"))
+        .ok_or("not running from an app bundle")?
+        .to_path_buf();
+    let folder = bundle.parent().ok_or("app bundle has no folder")?;
+
+    let mount = std::env::temp_dir().join(format!("assayplot-update-{}", std::process::id()));
+    std::fs::create_dir_all(&mount).map_err(|error| error.to_string())?;
+    let attached = Command::new("hdiutil")
+        .args(["attach", "-nobrowse", "-readonly", "-noautoopen", "-mountpoint"])
+        .arg(&mount)
+        .arg(dmg)
+        .status()
+        .map_err(|error| error.to_string())?;
+    if !attached.success() {
+        return Err("the disk image could not be mounted".into());
+    }
+
+    let result = (|| {
+        let source = std::fs::read_dir(&mount)
+            .map_err(|error| error.to_string())?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| path.extension().is_some_and(|ext| ext == "app"))
+            .ok_or("no app in the disk image")?;
+
+        let staged = folder.join(".AssayPlot-update.app");
+        let old = folder.join(".AssayPlot-old.app");
+        let _ = std::fs::remove_dir_all(&staged);
+        let _ = std::fs::remove_dir_all(&old);
+
+        let copied = Command::new("ditto").arg(&source).arg(&staged).status().map_err(|e| e.to_string())?;
+        if !copied.success() {
+            let _ = std::fs::remove_dir_all(&staged);
+            return Err("the new version could not be copied next to the old one".into());
+        }
+        let _ = Command::new("xattr").args(["-dr", "com.apple.quarantine"]).arg(&staged).status();
+
+        std::fs::rename(&bundle, &old).map_err(|error| error.to_string())?;
+        if let Err(error) = std::fs::rename(&staged, &bundle) {
+            let _ = std::fs::rename(&old, &bundle);
+            return Err(error.to_string());
+        }
+        let _ = std::fs::remove_dir_all(&old);
+        Ok(())
+    })();
+
+    let _ = Command::new("hdiutil").args(["detach", "-quiet"]).arg(&mount).status();
+    let _ = std::fs::remove_dir(&mount);
+    result?;
+
+    Command::new("open").arg("-n").arg(&bundle).spawn().map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+/// Puts the new AppImage where the running one is and starts it.
+#[cfg(target_os = "linux")]
+fn replace_appimage(new: &std::path::Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let current = PathBuf::from(std::env::var_os("APPIMAGE").ok_or("not running from an AppImage")?);
+    let folder = current.parent().ok_or("AppImage has no folder")?;
+    let staged = folder.join(".AssayPlot-update.AppImage");
+
+    std::fs::copy(new, &staged).map_err(|error| error.to_string())?;
+    std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+    if let Err(error) = std::fs::rename(&staged, &current) {
+        let _ = std::fs::remove_file(&staged);
+        return Err(error.to_string());
+    }
+    let _ = std::fs::remove_file(new);
+
+    std::process::Command::new(&current).spawn().map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 #[cfg(test)]

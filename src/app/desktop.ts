@@ -45,9 +45,27 @@ export async function openFile(
   const { open } = await import('@tauri-apps/plugin-dialog');
   const path = await open({ multiple: false, filters });
   if (typeof path !== 'string') return null;
+  return readPath(path);
+}
 
+/** Reads a file the app was given a path to. */
+export async function readPath(path: string): Promise<{ name: string; bytes: Uint8Array }> {
   const { readFile } = await import('@tauri-apps/plugin-fs');
   return { name: path.split(/[/\\]/).pop() ?? path, bytes: await readFile(path) };
+}
+
+/** Projects the system asked the app to open, e.g. a double-clicked .asp. */
+export async function takeOpenedFiles(): Promise<string[]> {
+  if (!isDesktop()) return [];
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<string[]>('take_opened_files');
+}
+
+/** Calls back when another project is handed over while the app is running (macOS). */
+export async function onFilesOpened(callback: () => void): Promise<() => void> {
+  if (!isDesktop()) return () => {};
+  const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+  return getCurrentWebviewWindow().listen('open-files', callback);
 }
 
 function downloadInBrowser(filename: string, data: string | Uint8Array, mime: string) {

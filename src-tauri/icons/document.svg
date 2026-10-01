@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EEF3F2"/>
+    </linearGradient>
+  </defs>
+  <path d="M232 72 H660 L840 252 V920 Q840 968 792 968 H232 Q184 968 184 920 V120 Q184 72 232 72 Z"
+        fill="#0A3F3A" opacity="0.18" transform="translate(0 14)"/>
+  <path d="M232 72 H660 L840 252 V920 Q840 968 792 968 H232 Q184 968 184 920 V120 Q184 72 232 72 Z"
+        fill="url(#paper)" stroke="#C9D8D5" stroke-width="6"/>
+  <path d="M660 72 V204 Q660 252 708 252 H840 Z" fill="#9CCFC7"/>
+  <g transform="translate(1024 0) scale(-1 1)">
+  <g fill="#0C6259">
+    <rect x="300" y="470" width="110" height="250" rx="20"/>
+    <rect x="457" y="380" width="110" height="340" rx="20"/>
+    <rect x="614" y="300" width="110" height="420" rx="20"/>
+  </g>
+  <g fill="#2FA597">
+    <circle cx="355" cy="408" r="26"/><circle cx="355" cy="342" r="26"/>
+    <circle cx="512" cy="318" r="26"/><circle cx="512" cy="252" r="26"/>
+    <circle cx="669" cy="236" r="26"/>
+  </g>
+  </g>
+  <rect x="282" y="738" width="460" height="16" rx="8" fill="#0C6259"/>
+  <path d="M184 790 H840 V920 Q840 968 792 968 H232 Q184 968 184 920 Z" fill="#0C6259"/>
+  <text x="512" y="905" text-anchor="middle" fill="#FFFFFF"
+        font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
+        font-size="118" font-weight="700" letter-spacing="10">.ASP</text>
+</svg>

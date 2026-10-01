@@ -36,7 +36,8 @@ import { buildReport, reportToHtml, reportToMarkdown } from './report.ts';
 import { reportToPdf } from './reportpdf.ts';
 import {
   checkForUpdate, downloadUpdate, installUpdate, isDesktop, isMac, openExternal,
-  openFile, openNewWindow, quitApp, safeName, saveFile, windowControls,
+  onFilesOpened, openFile, openNewWindow, quitApp, readPath, safeName, saveFile,
+  takeOpenedFiles, windowControls,
   type Update,
 } from './desktop.ts';
 import {
@@ -370,8 +371,32 @@ function UpdateDialog({ update, onClose }: { update: Update; onClose: (skip: boo
   const [stage, setStage] = useState<'offer' | 'downloading' | 'ready' | 'failed'>('offer');
   const [detail, setDetail] = useState('');
   const notify = useStore((s) => s.notify);
+  const ask = useStore((s) => s.ask);
+  // The release notes start with what changed; the download table below it
+  // is for the release page.
+  const changes = update.notes.split(/\n#{1,6}\s/)[0].trim();
+
+  /** Installing restarts the app, so unsaved work gets a chance first. */
+  const readyToRestart = () =>
+    !useStore.getState().dirty
+      ? Promise.resolve(true)
+      : new Promise<boolean>((resolve) => {
+          ask({
+            title: 'Save your project before updating?',
+            detail: 'AssayPlot restarts to finish the update.',
+            choices: [
+              { id: 'save', label: 'Save first', tone: 'primary' },
+              { id: 'discard', label: 'Update without saving', tone: 'danger' },
+            ],
+            onAnswer: async (choice) => {
+              if (choice === 'save') { resolve(await saveProject()); return; }
+              resolve(choice === 'discard');
+            },
+          });
+        });
 
   const start = async () => {
+    if (!(await readyToRestart())) return;
     setStage('downloading');
     try {
       const path = await downloadUpdate(update);
@@ -379,7 +404,7 @@ function UpdateDialog({ update, onClose }: { update: Update; onClose: (skip: boo
       setStage('ready');
       const mustQuit = await installUpdate(path);
       if (mustQuit) {
-        notify('The installer is running. AssayPlot will close.');
+        notify(`Updating to ${update.version}. AssayPlot restarts in a moment.`);
         setTimeout(() => quitApp(), 1200);
       }
     } catch (error) {
@@ -396,9 +421,9 @@ function UpdateDialog({ update, onClose }: { update: Update; onClose: (skip: boo
 
         {stage === 'offer' && (
           <>
-            {update.notes && (
+            {changes && (
               <div className="update-notes">
-                {update.notes.split('\n').filter(Boolean).slice(0, 8).map((line, index) => (
+                {changes.split('\n').filter(Boolean).slice(0, 8).map((line, index) => (
                   <p key={index}>{line.replace(/^[-*#\s]+/, '')}</p>
                 ))}
               </div>
@@ -664,10 +689,10 @@ export function App({ onReady }: { onReady?: () => void } = {}) {
         </div>
       )}
       <Toolbar canUndo={canUndo} canRedo={canRedo} />
+      {update && <UpdateDialog update={update} onClose={dismissUpdate} />}
       {problem && <ProblemPanel problem={problem} onDismiss={dismissProblem} />}
       {question && <QuestionDialog question={question} onAnswer={answer} />}
       {working && <WorkingOverlay label={working} />}
-      {update && <UpdateDialog update={update} onClose={dismissUpdate} />}
       <div className="body">
         <Navigator />
         <main className="stage" id="stage" tabIndex={-1}>
@@ -710,9 +735,35 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
 
   const openProject = async () => {
     if (!isDesktop()) { openRef.current?.click(); return; }
-    const picked = await openFile(PROJECT_FILTER);
-    if (!picked) return;
-    open(new File([new Uint8Array(picked.bytes).slice().buffer], picked.name));
+    try {
+      const picked = await openFile(PROJECT_FILTER);
+      if (!picked) return;
+      await open(new File([new Uint8Array(picked.bytes).slice().buffer], picked.name));
+    } catch (error) {
+      cannotRead(error);
+    }
+  };
+
+  const openPath = async (path: string) => {
+    try {
+      const picked = await readPath(path);
+      await open(new File([new Uint8Array(picked.bytes).slice().buffer], picked.name));
+    } catch (error) {
+      cannotRead(error, path.split(/[/\\]/).pop());
+    }
+  };
+
+  const cannotRead = (error: unknown, name = 'The project') => {
+    reportProblem({
+      title: `${name === 'The project' ? name : `“${name}”`} could not be opened`,
+      detail: error instanceof Error ? error.message : String(error),
+      done: 'Nothing. Your current project is untouched.',
+      notDone: 'The file was not opened.',
+      fix: [
+        'Check the file is still where it was, and that you can open it in Finder or Explorer.',
+        'If it is in a synced folder (iCloud, OneDrive, Dropbox), make sure it has finished downloading.',
+      ],
+    });
   };
 
   const newProject = () => {
@@ -782,6 +833,19 @@ function Toolbar({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) {
       setWorking(null);
     }
   };
+
+  // A project double-clicked in Finder or Explorer, or handed over while the
+  // app is running. The ref keeps the latest open(), which knows about unsaved work.
+  const openPathRef = useRef(openPath);
+  openPathRef.current = openPath;
+  useEffect(() => {
+    let stop = () => {};
+    const openWaiting = () =>
+      takeOpenedFiles().then((paths) => { if (paths[0]) openPathRef.current(paths[0]); }).catch(() => {});
+    openWaiting();
+    onFilesOpened(openWaiting).then((unlisten) => { stop = unlisten; });
+    return () => stop();
+  }, []);
 
   const importData = async (files: FileList) => {
     const added: string[] = [];
