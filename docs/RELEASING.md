@@ -128,8 +128,8 @@ git push gitlab main v0.7.6
 
 The tag's pipeline builds Linux, both macOS versions and Windows, uploads them to
 the package registry, writes `SHA256SUMS.txt` and creates the release. To build
-the installers without releasing, run a pipeline on `main` with the variable
-`BUILD_INSTALLERS=1`.
+the installers without releasing, start a pipeline by hand (Build → Pipelines →
+Run pipeline).
 
 ## Release notes
 

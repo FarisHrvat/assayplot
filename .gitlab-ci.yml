@@ -1,7 +1,7 @@
 # Tests on every push, the website from main, and installers for all four
 # platforms on version tags. The tag's message becomes the release notes.
-# Installers can also be built without releasing: run a pipeline on main with
-# BUILD_INSTALLERS=1.
+# Installers can also be built without releasing: start a pipeline by hand
+# (Build > Pipelines > Run pipeline).
 
 stages: [test, build, release, deploy]
 
@@ -14,7 +14,7 @@ workflow:
   stage: build
   rules:
     - if: $CI_COMMIT_TAG =~ /^v/
-    - if: $CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $BUILD_INSTALLERS == "1"
+    - if: $CI_PIPELINE_SOURCE =~ /^(web|api)$/
   artifacts:
     paths: [out/]
     expire_in: 1 week
