@@ -1,4 +1,4 @@
-//! Checking GitHub for a newer release, and fetching it.
+//! Checking GitLab for a newer release, and fetching it.
 //!
 //! Not Tauri's updater plugin, which wants every release signed with a key
 //! kept as a repo secret. This reads the public releases API and hands the
@@ -6,7 +6,8 @@
 
 use std::path::PathBuf;
 
-const RELEASES: &str = "https://api.github.com/repos/FarisHrvat/assayplot/releases/latest";
+const RELEASES: &str =
+    "https://gitlab.com/api/v4/projects/FarisHrvat%2Fassayplot/releases/permalink/latest";
 const AGENT: &str = concat!("AssayPlot/", env!("CARGO_PKG_VERSION"));
 
 #[derive(serde::Serialize, Clone)]
@@ -91,19 +92,18 @@ pub async fn check_update() -> Result<Option<Update>, String> {
 
     let response = client
         .get(RELEASES)
-        .header("Accept", "application/vnd.github+json")
         .send()
         .await
-        .map_err(|error| format!("GitHub could not be reached: {error}"))?;
+        .map_err(|error| format!("GitLab could not be reached: {error}"))?;
 
     if !response.status().is_success() {
-        return Err(format!("GitHub answered {}.", response.status()));
+        return Err(format!("GitLab answered {}.", response.status()));
     }
 
     let release: serde_json::Value = response
         .json()
         .await
-        .map_err(|error| format!("GitHub's answer could not be read: {error}"))?;
+        .map_err(|error| format!("GitLab's answer could not be read: {error}"))?;
 
     let tag = release["tag_name"].as_str().unwrap_or_default().to_string();
     let current = env!("CARGO_PKG_VERSION").to_string();
@@ -112,18 +112,23 @@ pub async fn check_update() -> Result<Option<Update>, String> {
     }
 
     let empty = Vec::new();
-    let assets = release["assets"].as_array().unwrap_or(&empty);
-    for asset in assets {
-        let name = asset["name"].as_str().unwrap_or_default();
+    let links = release["assets"]["links"].as_array().unwrap_or(&empty);
+    for link in links {
+        let name = link["name"].as_str().unwrap_or_default();
         if let Some(instruction) = wanted_asset(name) {
+            let url = link["direct_asset_url"]
+                .as_str()
+                .or_else(|| link["url"].as_str())
+                .unwrap_or_default()
+                .to_string();
             return Ok(Some(Update {
                 version: tag.trim_start_matches('v').to_string(),
                 current,
-                notes: release["body"].as_str().unwrap_or_default().to_string(),
-                url: asset["browser_download_url"].as_str().unwrap_or_default().to_string(),
+                notes: release["description"].as_str().unwrap_or_default().to_string(),
+                bytes: size_of(&client, &url).await,
+                url,
                 filename: name.to_string(),
-                bytes: asset["size"].as_u64().unwrap_or(0),
-                page: release["html_url"].as_str().unwrap_or_default().to_string(),
+                page: release["_links"]["self"].as_str().unwrap_or_default().to_string(),
                 instruction: instruction.to_string(),
             }));
         }
@@ -133,6 +138,14 @@ pub async fn check_update() -> Result<Option<Update>, String> {
     Err(format!(
         "Version {tag} is available, but it has no build for this system. Download it from the releases page."
     ))
+}
+
+/// GitLab doesn't list file sizes with a release, so ask for it. Zero if unknown.
+async fn size_of(client: &reqwest::Client, url: &str) -> u64 {
+    match client.head(url).send().await {
+        Ok(response) => response.content_length().unwrap_or(0),
+        Err(_) => 0,
+    }
 }
 
 fn downloads_dir() -> PathBuf {

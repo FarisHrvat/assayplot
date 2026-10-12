@@ -24,8 +24,8 @@ which before releasing. Never commit a hand-edited fixture.
 
 ## Badges
 
-The README and the landing page carry live badges from shields.io and the
-Actions badge. They need no maintenance now the repository is public.
+The README and the landing page carry live badges from shields.io and GitLab's
+pipeline badge. They need no maintenance.
 
 ## Version numbers
 
@@ -57,10 +57,9 @@ This is the main thing standing between the current alpha and a 1.0 that labs
 can be asked to install.
 
 Neither can be automated away: both require the project owner's legal identity
-and payment. **The workflow is already wired for both.** Every signing step in
-`.github/workflows/release.yml` is guarded on its own secret and skips itself
-when that secret is unset, so unsigned builds keep working and nothing has to
-change on the day a certificate arrives. The secrets below are the whole job.
+and payment. The old GitHub workflow (`.github/workflows/release.yml`) has every
+signing step wired and guarded on its own secret; port those steps to GitLab CI
+variables when a certificate arrives. The secrets below are the whole job.
 
 | Secret | Used for |
 |---|---|
@@ -118,13 +117,26 @@ the artefacts.
 
 ## Cutting the release
 
+The project lives on GitLab. Its free CI builds on Linux only, so the macOS
+builds are made on a Mac and the release is put together from there.
+
 ```bash
-git tag -a v0.7.0 -m "AssayPlot 0.5.0"
-git push origin v0.7.0
+git tag -a v0.7.6 -m "AssayPlot 0.7.6"
+git push gitlab main v0.7.6
 ```
 
-CI builds macOS, Linux and Windows and attaches the artefacts. Publish checksums
-with them.
+The tag's `linux` job builds the AppImage, `.deb` and `.rpm` and uploads them to
+the project's package registry. When it has passed, write the "what changed"
+lines (the update dialog shows them) to a file and run, on a Mac with `glab`
+signed in:
+
+```bash
+bash ci/gitlab-release.sh notes.md
+```
+
+It builds both macOS versions, adds the Linux files, writes `SHA256SUMS.txt` and
+creates the release. Windows builds need a Windows runner and are paused until
+there is one.
 
 ## Release notes
 

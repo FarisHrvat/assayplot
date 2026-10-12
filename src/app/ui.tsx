@@ -430,7 +430,7 @@ function UpdateDialog({ update, onClose }: { update: Update; onClose: (skip: boo
             )}
             <p className="modal-note">{update.instruction}</p>
             <p className="modal-note">
-              {update.filename} · {megabytes(update.bytes)}. Your projects and settings are untouched.
+              {update.filename}{update.bytes ? ` · ${megabytes(update.bytes)}` : ''}. Your projects and settings are untouched.
             </p>
             <div className="modal-actions modal-actions-end">
               <button onClick={() => openExternal(update.page)}>Release notes</button>
@@ -444,7 +444,7 @@ function UpdateDialog({ update, onClose }: { update: Update; onClose: (skip: boo
         {stage === 'downloading' && (
           <>
             <div className="working-track"><div className="working-bar" /></div>
-            <p className="modal-note">Downloading {update.filename} ({megabytes(update.bytes)}).</p>
+            <p className="modal-note">Downloading {update.filename}{update.bytes ? ` (${megabytes(update.bytes)})` : ''}.</p>
           </>
         )}
 
@@ -483,7 +483,7 @@ const SKIPPED_KEY = 'assayplot.update.skipped';
  * The AGPL asks that a program offer users a way to get its source. Putting the
  * link in Preferences is the least it can be.
  */
-const SOURCE_URL = 'https://github.com/FarisHrvat/assayplot';
+const SOURCE_URL = 'https://gitlab.com/FarisHrvat/assayplot';
 
 /** Checks once per launch, a moment after the interface settles. */
 function useUpdateCheck(enabled: boolean) {
@@ -1433,7 +1433,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
               Check for a new version when AssayPlot starts
             </label>
             <Hint>
-              Asks GitHub which release is newest, once per launch. Nothing is downloaded and
+              Asks GitLab which release is newest, once per launch. Nothing is downloaded and
               nothing is installed without you saying so, and no information about you or your
               data is sent.
             </Hint>

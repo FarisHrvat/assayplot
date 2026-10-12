@@ -294,7 +294,7 @@ Three tabs, under the gear:
 
 ## Updates
 
-At startup AssayPlot asks GitHub which release is newest. If there is one, it
+At startup AssayPlot asks GitLab which release is newest. If there is one, it
 says so and shows what changed; nothing is downloaded and nothing is installed
 unless you say yes. No information about you or your data is sent, and the
 check can be turned off in Preferences.

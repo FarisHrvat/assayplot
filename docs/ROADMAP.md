@@ -84,7 +84,7 @@ time someone reports a freeze, and not before.
 - **Claiming clinical or regulatory validation.** Agreement with R on a test
   suite is not the same thing, and saying otherwise would be dishonest.
 - **Telemetry.** There is none, and none is planned. The update check asks
-  GitHub which release is newest and sends nothing about the user or their data.
+  GitLab which release is newest and sends nothing about the user or their data.
 - **Every advanced method.** Breadth after depth. A wrong number in an obscure
   procedure damages trust in every correct one beside it.
 

@@ -6,17 +6,17 @@
 
 **Free, open-source statistics and publication figures for the lab.**
 
-[![Release](https://img.shields.io/github/v/release/FarisHrvat/assayplot?include_prereleases&sort=semver&label=release&color=0C6259)](https://github.com/FarisHrvat/assayplot/releases/latest)
-[![CI](https://github.com/FarisHrvat/assayplot/actions/workflows/ci.yml/badge.svg)](https://github.com/FarisHrvat/assayplot/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/gitlab/v/release/FarisHrvat%2Fassayplot?include_prereleases&sort=semver&label=release&color=0C6259)](https://gitlab.com/FarisHrvat/assayplot/-/releases/permalink/latest)
+[![CI](https://gitlab.com/FarisHrvat/assayplot/badges/main/pipeline.svg)](https://gitlab.com/FarisHrvat/assayplot/-/pipelines)
 [![Tests](https://img.shields.io/badge/tests-256%20passing-2e6b36)](docs/VALIDATION.md)
 [![Checked against R](https://img.shields.io/badge/checked%20against%20R-63%20cases-0C6259)](docs/VALIDATION.md)
 [![Licence](https://img.shields.io/badge/licence-AGPL--3.0-6B7A77)](LICENSE)
-[![Platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-supported-6B7A77)](https://github.com/FarisHrvat/assayplot/releases/latest)
+[![Platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-supported-6B7A77)](https://gitlab.com/FarisHrvat/assayplot/-/releases/permalink/latest)
 
-<a href="https://farishrvat.github.io/assayplot/">
+<a href="https://farishrvat.gitlab.io/assayplot/">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/visit-site-dark.svg">
-    <img src="docs/assets/visit-site.svg" alt="Open the website: farishrvat.github.io/assayplot" width="340">
+    <img src="docs/assets/visit-site.svg" alt="Open the website: farishrvat.gitlab.io/assayplot" width="340">
   </picture>
 </a>
 
@@ -30,7 +30,7 @@ download it, all on one page.
 43 analyses, 37 plot types, every procedure checked against R. Runs on your
 machine: no account, no cloud, no telemetry, no subscription.
 
-**[Download](https://github.com/FarisHrvat/assayplot/releases/latest)** ·
+**[Download](https://gitlab.com/FarisHrvat/assayplot/-/releases/permalink/latest)** ·
 **[User guide](docs/GUIDE.md)** ·
 **[How the statistics are validated](docs/VALIDATION.md)** ·
 **[Roadmap](docs/ROADMAP.md)** ·
@@ -42,7 +42,7 @@ machine: no account, no cloud, no telemetry, no subscription.
 |---|---|
 | Mac with Apple Silicon (M1 and later) | `AssayPlot_x.y.z_macOS_AppleSilicon_aarch64.dmg` |
 | Mac with an Intel processor | `AssayPlot_x.y.z_macOS_Intel_x64.dmg` |
-| Windows | `AssayPlot_x.y.z_Windows_x64-setup.exe` |
+| Windows | Coming back soon |
 | Debian, Ubuntu, Mint | `AssayPlot_x.y.z_Linux_Debian-Ubuntu_x64.deb` |
 | Fedora, RHEL, openSUSE | `AssayPlot_x.y.z_Linux_Fedora-RHEL_x64.rpm` |
 | Any other Linux | `AssayPlot_x.y.z_Linux_x64.AppImage` |
