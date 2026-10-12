@@ -1,13 +1,23 @@
-# Tests on every push, the website from main, and the Linux installers for
-# version tags. The macOS builds and the release page come from
-# ci/gitlab-release.sh, run on a Mac (see docs/RELEASING.md).
+# Tests on every push, the website from main, and installers for all four
+# platforms on version tags. The tag's message becomes the release notes.
+# Installers can also be built without releasing: run a pipeline on main with
+# BUILD_INSTALLERS=1.
 
-stages: [test, build, deploy]
+stages: [test, build, release, deploy]
 
 workflow:
   rules:
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH
+
+.installers:
+  stage: build
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+    - if: $CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $BUILD_INSTALLERS == "1"
+  artifacts:
+    paths: [out/]
+    expire_in: 1 week
 
 test:
   stage: test
@@ -23,10 +33,8 @@ test:
     - npm run build
 
 linux:
-  stage: build
+  extends: .installers
   image: ubuntu:22.04
-  rules:
-    - if: $CI_COMMIT_TAG =~ /^v/
   variables:
     DEBIAN_FRONTEND: noninteractive
     # linuxdeploy is an AppImage itself, and containers have no FUSE.
@@ -47,19 +55,53 @@ linux:
     - bash ci/check-appimage.sh "$TARGET"
     - cargo test --manifest-path src-tauri/Cargo.toml --lib
     - bash ci/collect.sh "$TARGET"
-    - VERSION="${CI_COMMIT_TAG#v}"
-    - |
-      for file in out/*; do
-        name=$(basename "$file")
-        [ "$name" = SHA256SUMS.txt ] && continue
-        curl --fail --silent --show-error --header "JOB-TOKEN: $CI_JOB_TOKEN" \
-          --upload-file "$file" \
-          "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/assayplot/$VERSION/$name"
-        echo "uploaded $name"
-      done
-  artifacts:
-    paths: [out/]
-    expire_in: 1 week
+    - bash ci/upload.sh
+
+macos:
+  extends: .installers
+  tags: [saas-macos-medium-m1]
+  image: macos-15-xcode-16
+  parallel:
+    matrix:
+      - TARGET: [aarch64-apple-darwin, x86_64-apple-darwin]
+  script:
+    - command -v node >/dev/null || brew install node@22
+    - export PATH="$(brew --prefix node@22 2>/dev/null)/bin:$PATH"
+    - curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+    - source "$HOME/.cargo/env"
+    - rustup target add "$TARGET"
+    - npm ci
+    # Tauri's own DMG step drives Finder, which a CI machine can't do.
+    - npx tauri build --target "$TARGET" --bundles app
+    - bash scripts/make-dmg.sh "$TARGET"
+    - bash ci/collect.sh "$TARGET"
+    - bash ci/upload.sh
+
+windows:
+  extends: .installers
+  tags: [saas-windows-medium-amd64]
+  variables:
+    TARGET: x86_64-pc-windows-msvc
+  script:
+    - choco install nodejs-lts -y --no-progress | Out-Null
+    - Invoke-WebRequest https://win.rustup.rs/x86_64 -OutFile rustup-init.exe
+    - .\rustup-init.exe -y --profile minimal --default-toolchain stable | Out-Null
+    - $env:Path = "$env:USERPROFILE\.cargo\bin;C:\Program Files\nodejs;$env:Path"
+    - npm ci
+    - npx tauri build --target $env:TARGET
+    - if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - '& "C:\Program Files\Git\bin\bash.exe" ci/collect.sh $env:TARGET'
+    - '& "C:\Program Files\Git\bin\bash.exe" ci/upload.sh'
+
+release:
+  stage: release
+  image: alpine:3.20
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+  needs: [linux, macos, windows]
+  script:
+    - apk add --no-cache bash curl jq > /dev/null
+    - bash ci/release.sh
 
 pages:
   stage: deploy

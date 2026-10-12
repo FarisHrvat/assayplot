@@ -483,7 +483,7 @@ const SKIPPED_KEY = 'assayplot.update.skipped';
  * The AGPL asks that a program offer users a way to get its source. Putting the
  * link in Preferences is the least it can be.
  */
-const SOURCE_URL = 'https://gitlab.com/FarisHrvat/assayplot';
+const SOURCE_URL = 'https://gitlab.com/assayplot/assayplot';
 
 /** Checks once per launch, a moment after the interface settles. */
 function useUpdateCheck(enabled: boolean) {

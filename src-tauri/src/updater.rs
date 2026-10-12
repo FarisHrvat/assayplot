@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 const RELEASES: &str =
-    "https://gitlab.com/api/v4/projects/FarisHrvat%2Fassayplot/releases/permalink/latest";
+    "https://gitlab.com/api/v4/projects/assayplot%2Fassayplot/releases/permalink/latest";
 const AGENT: &str = concat!("AssayPlot/", env!("CARGO_PKG_VERSION"));
 
 #[derive(serde::Serialize, Clone)]

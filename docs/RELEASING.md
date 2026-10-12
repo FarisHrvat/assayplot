@@ -117,26 +117,19 @@ the artefacts.
 
 ## Cutting the release
 
-The project lives on GitLab. Its free CI builds on Linux only, so the macOS
-builds are made on a Mac and the release is put together from there.
+The project lives on GitLab (gitlab.com/assayplot/assayplot), which builds all
+four platforms in CI. Write what changed as the tag message: it becomes the top
+of the release notes, and the update dialog shows it.
 
 ```bash
-git tag -a v0.7.6 -m "AssayPlot 0.7.6"
+git tag -a v0.7.6 -F notes.md
 git push gitlab main v0.7.6
 ```
 
-The tag's `linux` job builds the AppImage, `.deb` and `.rpm` and uploads them to
-the project's package registry. When it has passed, write the "what changed"
-lines (the update dialog shows them) to a file and run, on a Mac with `glab`
-signed in:
-
-```bash
-bash ci/gitlab-release.sh notes.md
-```
-
-It builds both macOS versions, adds the Linux files, writes `SHA256SUMS.txt` and
-creates the release. Windows builds need a Windows runner and are paused until
-there is one.
+The tag's pipeline builds Linux, both macOS versions and Windows, uploads them to
+the package registry, writes `SHA256SUMS.txt` and creates the release. To build
+the installers without releasing, run a pipeline on `main` with the variable
+`BUILD_INSTALLERS=1`.
 
 ## Release notes
 
