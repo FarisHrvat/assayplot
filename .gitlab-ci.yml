@@ -90,8 +90,13 @@ windows:
     - npm ci
     - npx tauri build --target $env:TARGET
     - if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    - '& "C:\Program Files\Git\bin\bash.exe" ci/collect.sh $env:TARGET'
-    - '& "C:\Program Files\Git\bin\bash.exe" ci/upload.sh'
+    # Git Bash, wherever this runner has Git installed, or a fresh one.
+    - $bash = Join-Path (git --exec-path) "..\..\..\bin\bash.exe"
+    - if (-not (Test-Path $bash)) { choco install git -y --no-progress | Out-Null; $bash = "C:\Program Files\Git\bin\bash.exe" }
+    - '& $bash ci/collect.sh $env:TARGET'
+    - if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - '& $bash ci/upload.sh'
+    - if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 release:
   stage: release

@@ -122,8 +122,8 @@ four platforms in CI. Write what changed as the tag message: it becomes the top
 of the release notes, and the update dialog shows it.
 
 ```bash
-git tag -a v0.7.6 -F notes.md
-git push gitlab main v0.7.6
+git tag -a v0.7.7 -F notes.md
+git push gitlab main v0.7.7
 ```
 
 The tag's pipeline builds Linux, both macOS versions and Windows, uploads them to
