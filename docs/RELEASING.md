@@ -128,7 +128,7 @@ Write what changed as the tag message: it becomes the top of the release notes
 on both sites, and the update dialog shows it.
 
 ```bash
-git tag -a v0.7.8 -F notes.md
+git tag -a v0.7.8 --cleanup=verbatim -F notes.md
 git push origin main v0.7.8
 ```
 
