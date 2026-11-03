@@ -158,10 +158,19 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: Draft the release
+    name: Publish the release
     needs: build
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
+      - uses: actions/checkout@v7
+      # Checkout leaves a tag without its message; fetch the real one.
+      - name: Notes from the tag message
+        run: |
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          git for-each-ref "refs/tags/$TAG" --format='%(contents)' | sed '/-----BEGIN/,$d' > notes.md
+          cat notes.md
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
@@ -170,31 +179,36 @@ jobs:
           mkdir -p release
           find artifacts -type f ! -name 'SHA256SUMS.txt' -exec cp {} release/ \;
           cd release && sha256sum * > SHA256SUMS.txt && ls -la
+      - name: Add the download table
+        run: |
+          cat >> notes.md <<'EOF'
+
+          ## Which file
+
+          | Your machine | File |
+          |---|---|
+          | Mac with Apple Silicon (M1 and later) | `macOS_AppleSilicon_aarch64.dmg` |
+          | Mac with an Intel processor | `macOS_Intel_x64.dmg` |
+          | Windows | `Windows_x64-setup.exe` |
+          | Debian, Ubuntu, Mint | `Linux_Debian-Ubuntu_x64.deb` |
+          | Fedora, RHEL, openSUSE | `Linux_Fedora-RHEL_x64.rpm` |
+          | Any other Linux | `Linux_x64.AppImage` |
+
+          ## Opening it the first time
+
+          The builds aren't signed yet, so the first launch gets blocked.
+
+          - **macOS**: System Settings, Privacy & Security, scroll down, Open Anyway.
+            Right-click then Open stopped working in macOS 15.
+          - **Windows**: at the SmartScreen warning, More info, then Run anyway.
+          - **Linux**: `chmod +x` the AppImage, or install the `.deb`.
+
+          Check a download with `sha256sum -c SHA256SUMS.txt`.
+          EOF
       - uses: softprops/action-gh-release@v2
         with:
-          draft: true
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: AssayPlot ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ env.TAG }}
+          name: AssayPlot ${{ env.TAG }}
           files: release/*
-          body: |
-            ## Which file
-
-            | Your machine | File |
-            |---|---|
-            | Mac with Apple Silicon (M1 and later) | `macOS_AppleSilicon_aarch64.dmg` |
-            | Mac with an Intel processor | `macOS_Intel_x64.dmg` |
-            | Windows | `Windows_x64-setup.exe` |
-            | Debian, Ubuntu, Mint | `Linux_Debian-Ubuntu_x64.deb` |
-            | Fedora, RHEL, openSUSE | `Linux_Fedora-RHEL_x64.rpm` |
-            | Any other Linux | `Linux_x64.AppImage` |
-
-            ## Opening it the first time
-
-            The builds aren't signed yet, so the first launch gets blocked.
-
-            - **macOS**: System Settings, Privacy & Security, scroll down, Open Anyway.
-              Right-click then Open stopped working in macOS 15.
-            - **Windows**: at the SmartScreen warning, More info, then Run anyway.
-            - **Linux**: `chmod +x` the AppImage, or install the `.deb`.
-
-            Check a download with `sha256sum -c SHA256SUMS.txt`.
+          body_path: notes.md
+          make_latest: true

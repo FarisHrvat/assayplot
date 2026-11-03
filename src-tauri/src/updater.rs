@@ -1,4 +1,5 @@
-//! Checking GitLab for a newer release, and fetching it.
+//! Checking for a newer release, and fetching it. GitHub first, with the
+//! GitLab mirror as a fallback when GitHub can't be reached.
 //!
 //! Not Tauri's updater plugin, which wants every release signed with a key
 //! kept as a repo secret. This reads the public releases API and hands the
@@ -6,7 +7,8 @@
 
 use std::path::PathBuf;
 
-const RELEASES: &str =
+const GITHUB: &str = "https://api.github.com/repos/FarisHrvat/assayplot/releases/latest";
+const GITLAB: &str =
     "https://gitlab.com/api/v4/projects/assayplot%2Fassayplot/releases/permalink/latest";
 const AGENT: &str = concat!("AssayPlot/", env!("CARGO_PKG_VERSION"));
 
@@ -82,6 +84,74 @@ fn asset_for(name: &str, os: &str, arch: &str) -> Option<&'static str> {
     None
 }
 
+/// The parts of a release the app needs, whichever site it came from.
+struct Release {
+    tag: String,
+    notes: String,
+    page: String,
+    /// Name, download URL and size in bytes (zero when the site doesn't say).
+    assets: Vec<(String, String, u64)>,
+}
+
+async fn fetch_json(client: &reqwest::Client, url: &str, site: &str) -> Result<serde_json::Value, String> {
+    let response = client
+        .get(url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|error| format!("{site} could not be reached: {error}"))?;
+    if !response.status().is_success() {
+        return Err(format!("{site} answered {}.", response.status()));
+    }
+    response
+        .json()
+        .await
+        .map_err(|error| format!("{site}'s answer could not be read: {error}"))
+}
+
+fn from_github(release: &serde_json::Value) -> Release {
+    let empty = Vec::new();
+    Release {
+        tag: release["tag_name"].as_str().unwrap_or_default().to_string(),
+        notes: release["body"].as_str().unwrap_or_default().to_string(),
+        page: release["html_url"].as_str().unwrap_or_default().to_string(),
+        assets: release["assets"]
+            .as_array()
+            .unwrap_or(&empty)
+            .iter()
+            .map(|asset| {
+                (
+                    asset["name"].as_str().unwrap_or_default().to_string(),
+                    asset["browser_download_url"].as_str().unwrap_or_default().to_string(),
+                    asset["size"].as_u64().unwrap_or(0),
+                )
+            })
+            .collect(),
+    }
+}
+
+fn from_gitlab(release: &serde_json::Value) -> Release {
+    let empty = Vec::new();
+    Release {
+        tag: release["tag_name"].as_str().unwrap_or_default().to_string(),
+        notes: release["description"].as_str().unwrap_or_default().to_string(),
+        page: release["_links"]["self"].as_str().unwrap_or_default().to_string(),
+        assets: release["assets"]["links"]
+            .as_array()
+            .unwrap_or(&empty)
+            .iter()
+            .map(|link| {
+                let url = link["direct_asset_url"].as_str().or_else(|| link["url"].as_str());
+                (
+                    link["name"].as_str().unwrap_or_default().to_string(),
+                    url.unwrap_or_default().to_string(),
+                    0,
+                )
+            })
+            .collect(),
+    }
+}
+
 #[tauri::command]
 pub async fn check_update() -> Result<Option<Update>, String> {
     let client = reqwest::Client::builder()
@@ -90,45 +160,30 @@ pub async fn check_update() -> Result<Option<Update>, String> {
         .build()
         .map_err(|error| error.to_string())?;
 
-    let response = client
-        .get(RELEASES)
-        .send()
-        .await
-        .map_err(|error| format!("GitLab could not be reached: {error}"))?;
+    let release = match fetch_json(&client, GITHUB, "GitHub").await {
+        Ok(json) => from_github(&json),
+        Err(github) => match fetch_json(&client, GITLAB, "GitLab").await {
+            Ok(json) => from_gitlab(&json),
+            Err(gitlab) => return Err(format!("{github} {gitlab}")),
+        },
+    };
 
-    if !response.status().is_success() {
-        return Err(format!("GitLab answered {}.", response.status()));
-    }
-
-    let release: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|error| format!("GitLab's answer could not be read: {error}"))?;
-
-    let tag = release["tag_name"].as_str().unwrap_or_default().to_string();
     let current = env!("CARGO_PKG_VERSION").to_string();
-    if tag.is_empty() || !is_newer(&tag, &current) {
+    if release.tag.is_empty() || !is_newer(&release.tag, &current) {
         return Ok(None);
     }
 
-    let empty = Vec::new();
-    let links = release["assets"]["links"].as_array().unwrap_or(&empty);
-    for link in links {
-        let name = link["name"].as_str().unwrap_or_default();
+    for (name, url, bytes) in &release.assets {
         if let Some(instruction) = wanted_asset(name) {
-            let url = link["direct_asset_url"]
-                .as_str()
-                .or_else(|| link["url"].as_str())
-                .unwrap_or_default()
-                .to_string();
+            let bytes = if *bytes > 0 { *bytes } else { size_of(&client, url).await };
             return Ok(Some(Update {
-                version: tag.trim_start_matches('v').to_string(),
+                version: release.tag.trim_start_matches('v').to_string(),
                 current,
-                notes: release["description"].as_str().unwrap_or_default().to_string(),
-                bytes: size_of(&client, &url).await,
-                url,
-                filename: name.to_string(),
-                page: release["_links"]["self"].as_str().unwrap_or_default().to_string(),
+                notes: release.notes.clone(),
+                url: url.clone(),
+                filename: name.clone(),
+                bytes,
+                page: release.page.clone(),
                 instruction: instruction.to_string(),
             }));
         }
@@ -136,7 +191,8 @@ pub async fn check_update() -> Result<Option<Update>, String> {
 
     // There is a release, just nothing for this platform in it.
     Err(format!(
-        "Version {tag} is available, but it has no build for this system. Download it from the releases page."
+        "Version {} is available, but it has no build for this system. Download it from the releases page.",
+        release.tag
     ))
 }
 
@@ -332,7 +388,7 @@ fn replace_appimage(new: &std::path::Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::asset_for;
+    use super::{asset_for, from_github, from_gitlab};
 
     // What ci/collect.sh and make-dmg.sh produce now.
     const CURRENT: [&str; 7] = [
@@ -370,5 +426,23 @@ mod tests {
     fn the_names_that_broke_0_7_2_do_not_match() {
         assert!(asset_for("AssayPlot_0.7.2_macOS_AppleSilicon.dmg", "macos", "aarch64").is_none());
         assert!(asset_for("AssayPlot_0.7.2_Windows_x64_setup.exe", "windows", "x86_64").is_none());
+    }
+
+    #[test]
+    fn both_release_formats_read_the_same() {
+        let github = serde_json::json!({
+            "tag_name": "v0.7.8", "body": "Notes", "html_url": "https://github.com/r",
+            "assets": [{"name": "AssayPlot_0.7.8_Windows_x64-setup.exe",
+                        "browser_download_url": "https://github.com/f", "size": 42}]
+        });
+        let gitlab = serde_json::json!({
+            "tag_name": "v0.7.8", "description": "Notes", "_links": {"self": "https://gitlab.com/r"},
+            "assets": {"links": [{"name": "AssayPlot_0.7.8_Windows_x64-setup.exe",
+                                  "url": "https://gitlab.com/u", "direct_asset_url": "https://gitlab.com/f"}]}
+        });
+        let (a, b) = (from_github(&github), from_gitlab(&gitlab));
+        assert_eq!((a.tag.as_str(), a.notes.as_str()), (b.tag.as_str(), b.notes.as_str()));
+        assert_eq!(a.assets[0], ("AssayPlot_0.7.8_Windows_x64-setup.exe".into(), "https://github.com/f".into(), 42));
+        assert_eq!(b.assets[0], ("AssayPlot_0.7.8_Windows_x64-setup.exe".into(), "https://gitlab.com/f".into(), 0));
     }
 }

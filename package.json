@@ -1,6 +1,6 @@
 {
   "name": "assayplot",
-  "version": "0.7.7",
+  "version": "0.7.8",
   "private": true,
   "type": "module",
   "description": "Open-source statistics and publication figures for the lab",
@@ -46,6 +46,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://gitlab.com/assayplot/assayplot"
+    "url": "https://github.com/FarisHrvat/assayplot"
   }
 }

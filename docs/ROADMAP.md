@@ -4,7 +4,7 @@ Where the project is, what is left, and what is deliberately not being built.
 
 ## Where it is
 
-**v0.7.7 (testable alpha).** The workflow is complete end to end: import data,
+**v0.7.8 (testable alpha).** The workflow is complete end to end: import data,
 run a defensible analysis, build a figure, assemble a panel, export it, save the
 project, reopen it later. 256 tests pass, 63 of them checked against R 4.6.1.
 
@@ -84,7 +84,7 @@ time someone reports a freeze, and not before.
 - **Claiming clinical or regulatory validation.** Agreement with R on a test
   suite is not the same thing, and saying otherwise would be dishonest.
 - **Telemetry.** There is none, and none is planned. The update check asks
-  GitLab which release is newest and sends nothing about the user or their data.
+  GitHub (or the GitLab mirror) which release is newest and sends nothing about the user or their data.
 - **Every advanced method.** Breadth after depth. A wrong number in an obscure
   procedure damages trust in every correct one beside it.
 

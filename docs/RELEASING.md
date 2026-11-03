@@ -24,8 +24,9 @@ which before releasing. Never commit a hand-edited fixture.
 
 ## Badges
 
-The README and the landing page carry live badges from shields.io and GitLab's
-pipeline badge. They need no maintenance.
+The README carries live badges from shields.io and GitHub Actions. They need no
+maintenance. The landing page has none on purpose: images from other sites would
+send every visitor's IP address there.
 
 ## Version numbers
 
@@ -57,9 +58,9 @@ This is the main thing standing between the current alpha and a 1.0 that labs
 can be asked to install.
 
 Neither can be automated away: both require the project owner's legal identity
-and payment. The old GitHub workflow (`.github/workflows/release.yml`) has every
-signing step wired and guarded on its own secret; port those steps to GitLab CI
-variables when a certificate arrives. The secrets below are the whole job.
+and payment. The GitHub workflow (`.github/workflows/release.yml`) has every
+signing step wired and guarded on its own secret; port them to GitLab CI
+variables too when a certificate arrives. The secrets below are the whole job.
 
 | Secret | Used for |
 |---|---|
@@ -117,19 +118,23 @@ the artefacts.
 
 ## Cutting the release
 
-The project lives on GitLab (gitlab.com/assayplot/assayplot), which builds all
-four platforms in CI. Write what changed as the tag message: it becomes the top
-of the release notes, and the update dialog shows it.
+The project lives on GitHub (github.com/FarisHrvat/assayplot), with a full mirror
+on GitLab (gitlab.com/assayplot/assayplot) in case GitHub is ever unavailable.
+`git push` sends to both. Each builds all four platforms in CI and publishes its
+own release from the same tag. The app asks GitHub for updates first and falls
+back to GitLab.
+
+Write what changed as the tag message: it becomes the top of the release notes
+on both sites, and the update dialog shows it.
 
 ```bash
-git tag -a v0.7.7 -F notes.md
-git push gitlab main v0.7.7
+git tag -a v0.7.8 -F notes.md
+git push origin main v0.7.8
 ```
 
-The tag's pipeline builds Linux, both macOS versions and Windows, uploads them to
-the package registry, writes `SHA256SUMS.txt` and creates the release. To build
-the installers without releasing, start a pipeline by hand (Build → Pipelines →
-Run pipeline).
+To build the installers without releasing, start a GitLab pipeline by hand
+(Build → Pipelines → Run pipeline). Running GitHub's Release workflow by hand
+publishes a release.
 
 ## Release notes
 

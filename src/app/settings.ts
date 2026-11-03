@@ -17,7 +17,7 @@ export interface Settings {
    * still has to draw, and a frozen interface reads as a crash.
    */
   effort: 'light' | 'balanced' | 'thorough';
-  /** Ask GitLab for a newer release once per launch. */
+  /** Ask GitHub (or the GitLab mirror) for a newer release once per launch. */
   checkForUpdates: boolean;
   /** Decimal places shown in results. The stored numbers keep full precision. */
   decimals: number;

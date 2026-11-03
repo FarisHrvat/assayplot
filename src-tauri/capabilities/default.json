@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Reading and saving files where the user chooses, opening a downloaded installer, and outbound access to two hosts: the Notion API for report export, and the GitLab releases API for the update check. Nothing else.",
+  "description": "Reading and saving files where the user chooses, opening a downloaded installer, and outbound access to the Notion API for report export, and to the GitHub and GitLab releases APIs for the update check. Nothing else.",
   "windows": [
     "main",
     "window-*"
@@ -52,6 +52,9 @@
       "allow": [
         {
           "url": "https://api.notion.com/*"
+        },
+        {
+          "url": "https://api.github.com/*"
         },
         {
           "url": "https://gitlab.com/api/v4/*"

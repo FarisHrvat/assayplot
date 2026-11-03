@@ -483,7 +483,7 @@ const SKIPPED_KEY = 'assayplot.update.skipped';
  * The AGPL asks that a program offer users a way to get its source. Putting the
  * link in Preferences is the least it can be.
  */
-const SOURCE_URL = 'https://gitlab.com/assayplot/assayplot';
+const SOURCE_URL = 'https://github.com/FarisHrvat/assayplot';
 
 /** Checks once per launch, a moment after the interface settles. */
 function useUpdateCheck(enabled: boolean) {
@@ -1433,7 +1433,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
               Check for a new version when AssayPlot starts
             </label>
             <Hint>
-              Asks GitLab which release is newest, once per launch. Nothing is downloaded and
+              Asks GitHub which release is newest once per launch, or GitLab if GitHub can't be reached. Nothing is downloaded and
               nothing is installed without you saying so, and no information about you or your
               data is sent.
             </Hint>
