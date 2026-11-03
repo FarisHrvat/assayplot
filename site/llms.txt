@@ -1,0 +1,9 @@
+# AssayPlot
+
+> Free, open-source desktop app (macOS, Windows, Linux) for laboratory statistics and publication figures. 43 analyses checked against R, 37 plot types. Runs offline; no account, no telemetry. AGPL-3.0.
+
+- [Home page](https://farishrvat.github.io/assayplot/): what it does, the list of analyses, validation, downloads, FAQ
+- [User guide](https://gitlab.com/assayplot/assayplot/-/blob/main/docs/GUIDE.md)
+- [Validation against R](https://gitlab.com/assayplot/assayplot/-/blob/main/docs/VALIDATION.md)
+- [Latest release](https://gitlab.com/assayplot/assayplot/-/releases/permalink/latest)
+- [Privacy](https://farishrvat.github.io/assayplot/privacy.html)

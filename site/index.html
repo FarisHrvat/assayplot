@@ -4,12 +4,46 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>AssayPlot | Free statistics and figures for the lab</title>
-<meta name="description" content="Free, open-source statistics and publication figures for the lab. 43 analyses checked against R, 37 plot types, runs offline on macOS, Windows and Linux.">
-<meta property="og:title" content="AssayPlot">
-<meta property="og:description" content="Free, open-source statistics and publication figures for the lab. Runs offline. No account, no subscription.">
+<title>AssayPlot | Free statistics and graphing software for the lab</title>
+<meta name="description" content="Free, open-source statistics and publication figures for lab scientists. 43 analyses checked against R, 37 plot types. Runs offline on macOS, Windows and Linux.">
+<link rel="canonical" href="https://farishrvat.github.io/assayplot/">
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="AssayPlot">
+<meta property="og:url" content="https://farishrvat.github.io/assayplot/">
+<meta property="og:title" content="AssayPlot: free statistics and graphing software for the lab">
+<meta property="og:description" content="Free, open-source statistics and publication figures. Runs offline. No account, no subscription.">
+<meta property="og:image" content="https://farishrvat.github.io/assayplot/assets/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="AssayPlot showing a bar chart with points and significance brackets">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="assets/logo.svg">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "SoftwareApplication",
+ "name": "AssayPlot",
+ "description": "Free, open-source desktop app for laboratory statistics and publication-ready figures. 43 analyses checked against R, 37 plot types, runs offline.",
+ "url": "https://farishrvat.github.io/assayplot/",
+ "applicationCategory": "BusinessApplication",
+ "applicationSubCategory": "Statistics and data visualisation",
+ "operatingSystem": "macOS, Windows, Linux",
+ "downloadUrl": "https://gitlab.com/assayplot/assayplot/-/releases/permalink/latest",
+ "screenshot": "https://farishrvat.github.io/assayplot/assets/screen-figure.png",
+ "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+ "isAccessibleForFree": true,
+ "offers": {
+  "@type": "Offer",
+  "price": "0",
+  "priceCurrency": "EUR"
+ },
+ "author": {
+  "@type": "Person",
+  "name": "Faris Hrvat"
+ },
+ "codeRepository": "https://gitlab.com/assayplot/assayplot"
+}
+</script>
 <style>
   :root {
     --paper: #f6f8f7; --surface: #ffffff; --sunk: #eef2f1;
@@ -44,7 +78,7 @@
     border-bottom: 1px solid var(--rule);
   }
   .top .wrap { display: flex; align-items: center; gap: 1rem; height: 60px; }
-  .brand { display: flex; align-items: center; gap: 0.6rem; font-weight: 650; letter-spacing: -0.01em; }
+  .brand { color: var(--ink); text-decoration: none; display: flex; align-items: center; gap: 0.6rem; font-weight: 650; letter-spacing: -0.01em; }
   .brand img { width: 28px; height: 28px; }
   .top nav { margin-left: auto; display: flex; gap: 1.1rem; font-size: 0.92rem; }
   .top nav a { color: var(--ink-soft); text-decoration: none; }
@@ -53,8 +87,11 @@
   .hero { padding: 4.5rem 0 2.5rem; text-align: center; }
   .hero h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); line-height: 1.1; margin: 0 0 1rem; letter-spacing: -0.03em; }
   .hero p.lede { font-size: clamp(1.05rem, 2vw, 1.25rem); color: var(--ink-soft); max-width: 46ch; margin: 0 auto 1.8rem; }
-  .badges { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: center; margin-bottom: 1.8rem; }
-  .badges img { height: 20px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: center; margin: 0 0 1.8rem; padding: 0; list-style: none; }
+  .badges li {
+    font-size: 0.8rem; font-weight: 600; color: var(--accent); background: var(--accent-soft);
+    border-radius: 999px; padding: 0.2rem 0.75rem;
+  }
 
   .cta { display: flex; gap: 0.7rem; justify-content: center; flex-wrap: wrap; }
   .button {
@@ -102,6 +139,11 @@
   }
   .warn { border-left-color: #9c3a22; background: color-mix(in srgb, #9c3a22 10%, transparent); }
 
+  .faq { margin-top: 1.4rem; max-width: 76ch; }
+  .faq details { border-bottom: 1px solid var(--rule); padding: 0.9rem 0; }
+  .faq summary { cursor: pointer; font-weight: 600; }
+  .faq details p { margin: 0.5rem 0 0; color: var(--ink-soft); }
+
   footer { border-top: 1px solid var(--rule); padding: 2.5rem 0; color: var(--ink-faint); font-size: 0.88rem; }
   footer .wrap { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
   footer nav { margin-left: auto; display: flex; gap: 1rem; }
@@ -116,11 +158,12 @@
 
 <header class="top">
   <div class="wrap">
-    <span class="brand"><img src="assets/logo.svg" alt=""> AssayPlot</span>
+    <a class="brand" href="./"><img src="assets/logo.svg" alt="" width="28" height="28"> AssayPlot</a>
     <nav>
       <a href="#what">What it does</a>
       <a href="#validation">Validation</a>
       <a href="#download">Download</a>
+      <a href="#faq">FAQ</a>
       <a href="https://gitlab.com/assayplot/assayplot">GitLab</a>
     </nav>
   </div>
@@ -133,13 +176,12 @@
     Runs on your machine. No account, no cloud, no subscription.
   </p>
 
-  <div class="badges">
-    <img src="https://img.shields.io/gitlab/v/release/assayplot%2Fassayplot?include_prereleases&sort=semver&label=release&color=0C6259" alt="Latest release">
-    <img src="https://gitlab.com/assayplot/assayplot/badges/main/pipeline.svg" alt="Build status">
-    <img src="https://img.shields.io/badge/tests-256%20passing-2e6b36" alt="256 tests passing">
-    <img src="https://img.shields.io/badge/checked%20against%20R-63%20cases-0C6259" alt="63 procedures checked against R">
-    <img src="https://img.shields.io/badge/licence-AGPL--3.0-6B7A77" alt="AGPL-3.0 licence">
-  </div>
+  <ul class="badges" aria-label="At a glance">
+    <li>256 tests passing</li>
+    <li>63 procedures checked against R</li>
+    <li>AGPL-3.0 licence</li>
+    <li>No cookies, no tracking</li>
+  </ul>
 
   <div class="cta">
     <a class="button primary" href="https://gitlab.com/assayplot/assayplot/-/releases/permalink/latest">Download for your machine</a>
@@ -147,7 +189,10 @@
   </div>
 
   <div class="shot">
-    <img src="assets/screen-figure.png" alt="A bar chart with individual points, error bars and significance brackets, beside the panel that controls it" loading="lazy">
+    <picture>
+      <source srcset="assets/screen-figure.webp" type="image/webp">
+      <img src="assets/screen-figure.png" alt="A bar chart with individual points, error bars and significance brackets, beside the panel that controls it" width="2880" height="1800" fetchpriority="high">
+    </picture>
   </div>
 </div>
 
@@ -160,7 +205,7 @@
       <div class="stat"><strong>43</strong><span>analyses</span></div>
       <div class="stat"><strong>37</strong><span>plot types</span></div>
       <div class="stat"><strong>63</strong><span>procedures checked against R</span></div>
-      <div class="stat"><strong>0</strong><span>bytes sent anywhere</span></div>
+      <div class="stat"><strong>0</strong><span>bytes of your data uploaded</span></div>
     </div>
 
     <div class="grid">
@@ -223,7 +268,10 @@
     </p>
 
     <div class="shot" style="margin-top:2rem">
-      <img src="assets/screen-analysis.png" alt="The analysis view: methods on the left grouped by question, the result on the right with what the test assumes" loading="lazy">
+      <picture>
+        <source srcset="assets/screen-analysis.webp" type="image/webp">
+        <img src="assets/screen-analysis.png" alt="The analysis view: methods on the left grouped by question, the result on the right with what the test assumes" width="2880" height="1800" loading="lazy">
+      </picture>
     </div>
 
     <div class="note">
@@ -301,6 +349,38 @@
   </div>
 </section>
 
+<section class="band" id="faq">
+  <div class="wrap">
+    <h2>Questions people ask</h2>
+    <div class="faq">
+      <details>
+        <summary>Is AssayPlot really free?</summary>
+        <p>Yes. It's free to download and use, for academic and commercial work, with no trial period, account or subscription. The source code is open under the AGPL-3.0 licence.</p>
+      </details>
+      <details>
+        <summary>Can it replace GraphPad Prism for my lab?</summary>
+        <p>For the everyday work, often yes: t-tests, ANOVA with post-hoc comparisons, non-parametric tests, dose&ndash;response curves, survival analysis and the bar, scatter and box plots that go with them. It doesn't open Prism files, so bring your data over as Excel or CSV. Look through the list of analyses above to check the ones you rely on are there.</p>
+      </details>
+      <details>
+        <summary>Does my data leave my computer?</summary>
+        <p>No. Everything runs locally and nothing is uploaded. The only network request is a check for new versions, which you can switch off in Settings. The <a href="privacy.html">privacy page</a> has the details.</p>
+      </details>
+      <details>
+        <summary>How do I know the results are correct?</summary>
+        <p>Every procedure is compared against R on every test run, and the comparison fixtures are regenerated from R to catch drift. That's strong evidence, but it isn't regulatory validation. For clinical or regulatory work, have a statistician check the result.</p>
+      </details>
+      <details>
+        <summary>Which computers does it run on?</summary>
+        <p>macOS on Apple Silicon and Intel, Windows 10 and 11, and Linux as a .deb, .rpm or AppImage. It works offline once installed.</p>
+      </details>
+      <details>
+        <summary>Can I use the figures in a paper?</summary>
+        <p>Yes. Export SVG with editable text, PNG at the resolution the journal asks for, or PDF. Each analysis also writes a methods sentence you can adapt for the manuscript.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
 <footer>
   <div class="wrap">
     <span>Copyright &copy; 2026 Faris Hrvat · <a href="https://gitlab.com/assayplot/assayplot/-/blob/main/LICENSE">AGPL-3.0-or-later</a></span>
@@ -309,6 +389,7 @@
       <a href="https://gitlab.com/assayplot/assayplot/-/blob/main/docs/VALIDATION.md">Validation</a>
       <a href="https://gitlab.com/assayplot/assayplot/-/blob/main/docs/ROADMAP.md">Roadmap</a>
       <a href="https://gitlab.com/assayplot/assayplot">Source</a>
+      <a href="privacy.html">Privacy</a>
     </nav>
   </div>
 </footer>

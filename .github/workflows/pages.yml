@@ -39,6 +39,7 @@ jobs:
           mkdir -p site/assets
           cp docs/assets/logo.svg docs/assets/wordmark.svg site/assets/
           cp docs/assets/screen-figure.png docs/assets/screen-analysis.png site/assets/
+          cp docs/assets/screen-figure.webp docs/assets/screen-analysis.webp docs/assets/og-image.png site/assets/
           # Tells Pages not to run Jekyll over it.
           touch site/.nojekyll
           ls -la site site/assets

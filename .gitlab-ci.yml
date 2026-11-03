@@ -119,5 +119,6 @@ pages:
     - cp -r site/. public/
     - cp docs/assets/logo.svg docs/assets/wordmark.svg public/assets/
     - cp docs/assets/screen-figure.png docs/assets/screen-analysis.png public/assets/
+    - cp docs/assets/screen-figure.webp docs/assets/screen-analysis.webp docs/assets/og-image.png public/assets/
   artifacts:
     paths: [public]
