@@ -11,6 +11,9 @@ on:
     paths:
       - 'site/**'
       - 'docs/assets/**'
+      - 'docs/GUIDE.md'
+      - 'docs/VALIDATION.md'
+      - 'scripts/build-site-docs.py'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -40,6 +43,8 @@ jobs:
           cp docs/assets/logo.svg docs/assets/wordmark.svg site/assets/
           cp docs/assets/screen-figure.png docs/assets/screen-analysis.png site/assets/
           cp docs/assets/screen-figure.webp docs/assets/screen-analysis.webp docs/assets/og-image.png site/assets/
+          sudo apt-get install -y -qq pandoc > /dev/null
+          python3 scripts/build-site-docs.py site
           # Tells Pages not to run Jekyll over it.
           touch site/.nojekyll
           ls -la site site/assets

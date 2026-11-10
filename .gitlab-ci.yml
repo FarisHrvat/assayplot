@@ -113,10 +113,12 @@ pages:
   image: alpine:3.20
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      changes: [site/**/*, docs/assets/**/*, .gitlab-ci.yml]
+      changes: [site/**/*, docs/assets/**/*, docs/GUIDE.md, docs/VALIDATION.md, scripts/build-site-docs.py, .gitlab-ci.yml]
   script:
+    - apk add --no-cache pandoc-cli python3 > /dev/null
     - mkdir -p public/assets
     - cp -r site/. public/
+    - python3 scripts/build-site-docs.py public
     - cp docs/assets/logo.svg docs/assets/wordmark.svg public/assets/
     - cp docs/assets/screen-figure.png docs/assets/screen-analysis.png public/assets/
     - cp docs/assets/screen-figure.webp docs/assets/screen-analysis.webp docs/assets/og-image.png public/assets/

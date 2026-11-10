@@ -10,6 +10,8 @@ src-tauri/gen/schemas/
 
 # Copied from docs/assets when the site is built; not a second copy in git.
 site/assets/
+site/guide.html
+site/validation.html
 
 # Installers gathered by ci/collect.sh.
 out/
